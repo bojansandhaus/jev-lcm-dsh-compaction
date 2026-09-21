@@ -11,7 +11,13 @@ export class Prepass {
     for(const [id,cs] of calls){const rs=results.get(id)??[];if(cs.length!==1||rs.length!==1)continue;const c=cs[0],r=rs[0];if(c.index<=0||c.index>=r.index||r.index>=tailStart||typeof r.message.content!=='string'||r.message.content.length<this.config.min_result_chars)continue;add({id:'',kind:'tool',message_index:c.index,text:r.message.content,start:0,end:0,store_id:r.message.store_id,call:c.call,scores:{},action:'unscored',jev_unscored:true});}
     this.metrics.values.jev_candidates_total=this.candidates.size;
   }
-  async flush(force=false){
+  private flushQueue:Promise<void>=Promise.resolve();
+  flush(force=false):Promise<void>{
+    const next=this.flushQueue.then(()=>this.flushOnce(force));
+    this.flushQueue=next.catch(()=>{});
+    return next;
+  }
+  private async flushOnce(force=false){
     if(!this.batcher.ready(force))return;this.batcher.flushed();const pending=[...this.candidates.values()].filter(c=>c.jev_unscored);if(!pending.length)return;
     const batch=shape(this.messages,pending,this.config);this.metrics.values.jev_state_tier=batch.tier;
     if(batch.selected.length)try{const scores=await this.chain.score(batch.state,batch.questions);const threshold=this.calibrator.observe(Object.entries(scores).filter(([k])=>!k.endsWith(':recovery')).map(([,v])=>v));const primary=batch.selected.map(c=>scores[c.id+(c.kind==='anchor'?':anchor_keep':':keep_result')]);const retained=this.calibrator.retainedIndices(primary);batch.selected.forEach((c,i)=>decide(c,scores,threshold,retained.has(i)));}catch{this.metrics.values.jev_fallbacks=Number(this.metrics.values.jev_fallbacks)+1;this.metrics.log('jev_fallback; LCM default condensation');}
