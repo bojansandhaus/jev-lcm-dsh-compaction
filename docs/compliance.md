@@ -13,6 +13,7 @@ This page is part of the rework of the Jev-only compaction failure modes reporte
 | FIX-5 batched scoring across turns | `src/batcher.ts`, `src/prepass.ts` serialized flush queue | `tests/core.test.ts` "541 candidates: batched, bounded, unscored and recoverable", `tests/concurrency.test.ts` "overlapping forced flushes score each candidate once", "summary persistence failure prevents returning a replacement" | Passing |
 | FIX-6 honest metrics and low-freed warning | `src/metrics.ts` | `tests/core.test.ts` "bad input and low freed warnings" | Passing |
 | Dual-provider authentication with identical resolution and fallback behavior | `src/providers.ts`, `src/jev-client.ts`, `src/settings.ts` | `tests/core.test.ts` "provider resolution, fallback, cooldown and no secret logging", `tests/parity.test.ts` "cross-language provider selection and fallback outcomes match the Python golden" | Passing |
+| Multi-layer rollup condensation | `src/store.ts` (`rollup`, `topLayer`, descendant suppression), `src/compressor.ts` (`rollupOnce`) | `tests/lcm-vertical.test.ts` "rollup condenses sibling leaves into a higher layer and replaces them in assembly", `tests/host-compaction.test.ts` "rollup condenses sibling leaf summaries through the host model" | Passing |
 | Node lifecycle and crash recovery | `src/store.ts` pending, committed, aborted states with reopen abort | `tests/lcm-vertical.test.ts` "nodes expose pending, committed, and aborted lifecycle states", `tests/host-compaction.test.ts` "assembly excludes explicitly aborted summaries" | Passing |
 | Recall-at-budget evaluator | `evaluation/run_eval.ts` | `tests/evaluation.test.ts` "actual host compaction preserves raw retrieval in both arms", "retention responds to actual model transport content", "invalid and nonconvergent budgets are rejected" | Passing |
 | Bundle activation through the shipped patch | `cordis.patch.yml`, `src/index.ts` | `tests/loader.test.ts` "shipped bundle disables native engine and mounts Jev through the real loader" | Passing |
@@ -37,7 +38,7 @@ This page is part of the rework of the Jev-only compaction failure modes reporte
 
 | Requirement | Receipt |
 |---|---|
-| `pnpm test` | 25 tests pass |
+| `pnpm test` | 27 tests pass |
 | `pnpm run typecheck` | Passes |
 | `pnpm run build` | Passes |
 | npm archive contents | `pnpm pack` builds `@bojansandhaus/jev-lcm-dsh-compaction` 1.0.0-rc.1 |
@@ -51,7 +52,7 @@ This page is part of the rework of the Jev-only compaction failure modes reporte
 
 - The shipped patch previously attempted a name change on the native row, which the loader skips. It now disables `compaction-basic` and inserts a distinct row, and the loader test mounts the shipped patch rather than a hand-authored substitute.
 - `dsh plugin --dump-config` does not exist in the installed CLI revision; verification uses `dsh --profile <name> --dump-config`. This is documented in the README.
-- Summarization text still comes from the host model. LCM owns the raw log, DAG, protected index, bounded assembly, and recall surface, which is the FIX-3 split. Multi-layer rollup condensation beyond one node per depth is not implemented.
+- Summarization text still comes from the host model. LCM owns the raw log, DAG, protected index, bounded assembly, rollup layering, and recall surface, which is the FIX-3 split.
 - The upstream production transcript and evaluation policy were never supplied; the evaluator reports synthetic transport integration only.
-- Publication is blocked: no authenticated `gh` host and no npm session on this machine, so the `dsh-plugin` topic, the `v1.0.0` release, and npm publication cannot be performed here.
+- npm publication is blocked because `npm whoami` reports no session. The GitHub remote, the `dsh-plugin` topic, and the `v1.0.0` draft release are handled through the stored Git credential.
 - The requested `1.0.0` changelog heading is present as prepared release content marked unpublished; no stable release is asserted.

@@ -48,6 +48,7 @@ The TypeScript defaults in `src/settings.ts` and the bundle defaults in `src/ind
 | `truncate_head_chars` | `300` | Truncate head. |
 | `min_result_chars` | `8000` | Candidate minimum. |
 | `hint_budget_tokens` | `4000` | Protected hint budget. |
+| `lcm_rollup_fan_in` | `4` | Committed top-layer summaries condensed into one higher-depth rollup node. `0` disables rollups. |
 
 With `auto`, absent keys are filtered. A pinned provider with a missing key fails fast. With both keys absent, scoring is disabled and the host path remains available. Key values must never appear in diagnostics.
 
@@ -55,7 +56,7 @@ With `auto`, absent keys are filtered. A pinned provider with a missing key fail
 
 `LcmStore` owns raw rows, FTS indexing, summary nodes, edges, source links, hints, and committed or aborted node status. Raw identities are unique per session and immutable. `lcm_grep`, `lcm_expand`, and `lcm_nodes` are session-scoped tools. The current grep surface uses exact quoted FTS matching and returns at most 100 rows.
 
-The active assembler gives protected hints first, then summary nodes within a character budget. A keep action can inject the original candidate. A truncate action injects a bounded head and a pointer. An over-budget candidate receives a pointer where possible. This is an implementation boundary, not proof that every host prompt consumes the assembled result.
+The active assembler gives protected hints first, then summary nodes within a character budget. Nodes arrive highest depth first, and a node that condenses others suppresses its descendants inside the same assembly while those descendants stay recallable. `rollup(session, summary, childIds)` creates that higher layer at `1 + max(child depth)` over at least two sibling nodes, `topLayer` reports the committed nodes no other node summarises, and after each successful compaction the engine condenses `lcm_rollup_fan_in` of them through the host model. A rollup whose host call fails is skipped, never failed forward into the compaction. A keep action can inject the original candidate. A truncate action injects a bounded head and a pointer. An over-budget candidate receives a pointer where possible. This is an implementation boundary, not proof that every host prompt consumes the assembled result.
 
 ## Decisions and edge cases
 
@@ -63,7 +64,7 @@ Actions are keep, truncate, defer/drop, or unscored. Jev never mutates raw rows.
 
 The shrink ladder is T0 full, T1 shortened inputs and headed results, T2 shorter inputs and results, T3 note-only results, and T4 folded old messages. Candidates beyond the hard cap become `jev_unscored`; they must remain recoverable from the raw store. CJK token accounting, externalized payload pointers, and full host prompt assembly remain explicit acceptance checks, not implied by a unit test.
 
-Endpoint validation decodes paths, rejects queries, fragments, credentials, unsafe traversal, controls, and non-local plain HTTP. OpenRouter currently maps through `/alpha/decisions`; verify the live provider contract before production use.
+Endpoint validation decodes paths, rejects queries, fragments, credentials, unsafe traversal, controls, and non-local plain HTTP. OpenRouter maps through `/alpha/decisions` and TypeSafe through `/systemone`. Both paths returned parseable `noul` scores in a live qualification on 2026-09-21 with one request each and no fallback; re-verify against your own account and model versions before production use.
 
 ## Metrics
 

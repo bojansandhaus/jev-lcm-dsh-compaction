@@ -46,6 +46,7 @@ Fixes the Jev-only compaction failure modes identified in [NousResearch/hermes-a
 - Jev scoring pass before LCM condensation, so ranking happens on evidence that is still verbatim.
 - Assistant-text anchor extraction and protected retention, covering the recall gap the PR identified.
 - Calibrated keep thresholds derived from observed score distributions, replacing the fixed `0.5` default.
+- Multi-layer rollup condensation: committed sibling summaries are condensed into a higher-depth node through the host model, and assembly emits the higher layer while its descendants stay recallable.
 - Tiered state shrink ladder with a hard token cap and explicit `jev_unscored` marking.
 - Batched scoring across turns with forced flushes at lifecycle boundaries.
 - LCM hint consumption so ranking decisions reach active-context assembly with raw evidence pointers.
@@ -84,6 +85,6 @@ Fixes the Jev-only compaction failure modes identified in [NousResearch/hermes-a
 
 ### Status
 
-Release content is complete but unpublished. This is a port of [jev-lcm-hermes-compaction](https://github.com/bojansandhaus/jev-lcm-hermes-compaction). Publication requires an authenticated GitHub host for the repository topic and release tag and an authenticated npm session for registry publication. See [docs/compliance.md](docs/compliance.md) and [docs/verification.md](docs/verification.md).
+Release content is complete but unpublished. This is a port of [jev-lcm-hermes-compaction](https://github.com/bojansandhaus/jev-lcm-hermes-compaction). The GitHub remote, repository topic, and draft release use the stored Git credential. Registry publication still requires an authenticated npm session, which this machine does not have. See [docs/compliance.md](docs/compliance.md) and [docs/verification.md](docs/verification.md).
 
 Licensed under the MIT license.

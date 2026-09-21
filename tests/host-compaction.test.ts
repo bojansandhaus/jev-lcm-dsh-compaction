@@ -92,6 +92,33 @@ test('compactNow uses the host model and commits exact host result boundaries', 
   }
 });
 
+test('rollup condenses sibling leaf summaries through the host model', async () => {
+  const h = harness();
+  try {
+    const raw = h.engine.store.ingest(h.agent.session.id, 'message:seed', { role: 'user', content: 'seed evidence' });
+    const leaves: number[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      const node = h.engine.store.node(h.agent.session.id, `leaf summary ${i}`, [raw], [], false);
+      h.engine.store.markNodeCommitted(node, i + 1, i + 2);
+      leaves.push(node);
+    }
+    const nodeId = await h.engine.rollupOnce(h.agent, new AbortController().signal);
+    assert.equal(typeof nodeId, 'number');
+    assert.equal(h.transport.requests.length, 1);
+    const nodes = h.engine.store.nodes(h.agent.session.id) as { id: number; depth: number; status: string }[];
+    const rollup = nodes.find((node) => node.id === nodeId);
+    assert.equal(rollup?.status, 'committed');
+    const leafDepths = leaves.map((id) => Number(nodes.find((node) => node.id === id)?.depth));
+    assert.ok(Number(rollup?.depth) > Math.max(...leafDepths));
+    for (const id of leaves) assert.ok(h.engine.store.db.prepare('SELECT 1 FROM edges WHERE parent=? AND child=?').get(nodeId as number, id));
+    const context = h.engine.store.assemble(h.agent.session.id, 20000);
+    assert.ok(context.some((entry) => entry.node_id === nodeId));
+    assert.ok(!context.some((entry) => leaves.includes(Number(entry.node_id))));
+  } finally {
+    await h.ctx.fiber.dispose();
+  }
+});
+
 test('automatic pressure reaches the overridden compactRegion and commits only its host replacement', async () => {
   const h = harness(true);
   let calls = 0;

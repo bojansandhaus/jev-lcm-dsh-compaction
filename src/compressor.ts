@@ -5,6 +5,7 @@ import type {} from '@deepseek-ai/dsh-token-meter';
 import type { CompactionTrigger } from '@deepseek-ai/dsh-compaction';
 import type { CommandId } from '@deepseek-ai/dsh-commands/brand';
 import type { Session,SessionSeq } from '@deepseek-ai/dsh-session';
+import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import type { Message as DshMessage,ContentBlock,ToolSchema } from '@deepseek-ai/dsh-llm';
 import { Settings,settings } from './settings.js';import { Prepass } from './prepass.js';import { LcmStore } from './store.js';import { Message } from './anchors.js';import { ProviderChain } from './providers.js';
 
@@ -46,7 +47,7 @@ export class JevLCMCompactionEngine extends BasicCompactionEngine {
         else this.store.markNodeAborted(node);
         this.pendingNodes.delete(agent.session.id);
       }
-      if(result)this.record(agent);
+      if(result){this.record(agent);await this.rollupIfNeeded(agent,signal);}
       return result;
     } catch(error){
       const node=this.pendingNodes.get(agent.session.id);
@@ -54,7 +55,7 @@ export class JevLCMCompactionEngine extends BasicCompactionEngine {
       throw error;
     }
   }
-  override async compactRegion(start:SessionSeq,end:SessionSeq,agent:Agent,signal?:AbortSignal){this.ingest(agent.session);try{const result=await super.compactRegion(start,end,agent,signal);const node=this.pendingNodes.get(agent.session.id);if(node!==undefined){const summarySeq=result.summarySeq;const endSeq=result.endSeq;this.store.markNodeCommitted(node,summarySeq,endSeq);this.pendingNodes.delete(agent.session.id);}this.record(agent);return result;}catch(error){const node=this.pendingNodes.get(agent.session.id);if(node!==undefined){this.store.markNodeAborted(node);this.pendingNodes.delete(agent.session.id);}throw error;}}
+  override async compactRegion(start:SessionSeq,end:SessionSeq,agent:Agent,signal?:AbortSignal){this.ingest(agent.session);try{const result=await super.compactRegion(start,end,agent,signal);const node=this.pendingNodes.get(agent.session.id);if(node!==undefined){const summarySeq=result.summarySeq;const endSeq=result.endSeq;this.store.markNodeCommitted(node,summarySeq,endSeq);this.pendingNodes.delete(agent.session.id);}this.record(agent);await this.rollupIfNeeded(agent,signal);return result;}catch(error){const node=this.pendingNodes.get(agent.session.id);if(node!==undefined){this.store.markNodeAborted(node);this.pendingNodes.delete(agent.session.id);}throw error;}}
   record(agent:Agent){const p=this.state(agent.session.id);const before=p.metrics.values.lcm_before_tokens;if(typeof before!=='number')return;const after=this.ctx.tokenMeter.measure(agent.session).totalTokens;p.metrics.compaction(before,after,1,after);delete p.metrics.values.lcm_before_tokens;this.ctx.logger.info(JSON.stringify(p.metrics.values));}
   protected override async summarize(input:SummaryInput,agent:Agent,signal?:AbortSignal){
     signal?.throwIfAborted();
@@ -71,5 +72,26 @@ export class JevLCMCompactionEngine extends BasicCompactionEngine {
     const summary:ContentBlock[]=[{type:'text',text:assembled.map(entry=>entry.text).join('\n\n')||condensed}];
     p.metrics.values.lcm_summary_nodes_created=1;p.metrics.values.lcm_nodes_created=1;p.metrics.values.lcm_before_tokens=before;
     return {...result,summary};
+  }
+  /** Condense the oldest committed top-layer summaries into one higher-depth node. */
+  async rollupOnce(agent:Agent,signal?:AbortSignal):Promise<number|undefined>{
+    const fanIn=this.jevSettings.lcm_rollup_fan_in;
+    if(!fanIn||fanIn<2)return undefined;
+    const session=agent.session.id;
+    const group=this.store.topLayer(session,fanIn);
+    if(group.length<fanIn)return undefined;
+    const messages=[...group].map(node=>createUserMessage({content:[{type:'text',text:`[node_id=${node.id}]\n${node.summary}`}],source:{kind:'user'}}));
+    const result=await super.summarize({messages},agent,signal);
+    const condensed=result.summary.filter((block):block is ContentBlock & {type:'text'}=>block.type==='text').map((block)=>block.text).join('\n');
+    if(!condensed.trim())return undefined;
+    const nodeId=this.store.rollup(session,condensed,group.map(node=>node.id));
+    this.store.markNodeCommitted(nodeId);
+    const p=this.states.get(session);
+    if(p)p.metrics.values.lcm_rollup_nodes_created=Number(p.metrics.values.lcm_rollup_nodes_created??0)+1;
+    return nodeId;
+  }
+  /** Rollup is an optimisation; a host failure must never fail the compaction itself. */
+  async rollupIfNeeded(agent:Agent,signal?:AbortSignal):Promise<void>{
+    try{await this.rollupOnce(agent,signal);}catch(error){this.ctx.logger.warn('jev-lcm rollup skipped: '+(error instanceof Error?error.message:'rollup_failed'));}
   }
 }

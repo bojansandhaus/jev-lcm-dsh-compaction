@@ -41,15 +41,54 @@ export class LcmStore {
     const row = this.db.prepare('SELECT id,body FROM raw WHERE session=? AND id=?').get(session, id) as { id: number; body: string } | undefined;
     return row ? { store_id: Number(row.id), raw: JSON.parse(row.body) } : null;
   }
-  node(session: string, summary: string, rawIds: number[], protectedCandidates: string[] = []): number {
+  /**
+   * `linkPrevious` chains this summary to the previous attempt and raises its depth.
+   * Pass `false` for sibling layer-zero leaves that a later rollup will condense.
+   */
+  node(session: string, summary: string, rawIds: number[], protectedCandidates: string[] = [], linkPrevious = true): number {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const previous = this.db.prepare('SELECT id,depth FROM nodes WHERE session=? ORDER BY id DESC LIMIT 1').get(session) as { id: number; depth: number } | undefined;
-      const id = Number(this.db.prepare('INSERT INTO nodes(session,depth,summary) VALUES(?,?,?)').run(session, previous ? Number(previous.depth) + 1 : 0, summary).lastInsertRowid);
-      if (previous) this.db.prepare('INSERT INTO edges(parent,child) VALUES(?,?)').run(id, Number(previous.id));
+      const chained = linkPrevious ? previous : undefined;
+      const id = Number(this.db.prepare('INSERT INTO nodes(session,depth,summary) VALUES(?,?,?)').run(session, chained ? Number(chained.depth) + 1 : 0, summary).lastInsertRowid);
+      if (chained) this.db.prepare('INSERT INTO edges(parent,child) VALUES(?,?)').run(id, Number(chained.id));
       const link = this.db.prepare('INSERT OR IGNORE INTO sources(node,raw) VALUES(?,?)');
       for (const raw of rawIds) link.run(id, raw);
       if (protectedCandidates.length) this.db.prepare('DELETE FROM hints WHERE session=? AND candidate NOT IN (' + protectedCandidates.map(() => '?').join(',') + ')').run(session, ...protectedCandidates);
+      this.db.exec('COMMIT');
+      return id;
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  /** Nodes that no other node summarises, oldest first, limited to `limit`. */
+  topLayer(session: string, limit: number): { id: number; depth: number; summary: string }[] {
+    const rows = this.db.prepare("SELECT id,depth,summary FROM nodes WHERE session=? AND status='committed'").all(session) as { id: number; depth: number; summary: string }[];
+    const children = new Set((this.db.prepare('SELECT child FROM edges').all() as { child: number }[]).map((row) => Number(row.child)));
+    return rows.filter((row) => !children.has(Number(row.id))).sort((a, b) => Number(a.id) - Number(b.id)).slice(0, Math.max(0, limit));
+  }
+  private descendants(id: number): number[] {
+    const out: number[] = []; const queue = [id];
+    const childOf = this.db.prepare('SELECT child FROM edges WHERE parent=?');
+    while (queue.length) {
+      const parent = queue.pop() as number;
+      for (const row of childOf.all(parent) as { child: number }[]) { const child = Number(row.child); out.push(child); queue.push(child); }
+    }
+    return out;
+  }
+  /** Condense committed child summaries into one higher-depth node (multi-layer rollup). */
+  rollup(session: string, summary: string, childIds: number[]): number {
+    if (childIds.length < 2) throw new Error('rollup requires at least two children');
+    const read = this.db.prepare('SELECT id,depth,session FROM nodes WHERE id=?');
+    let depth = 0;
+    for (const id of childIds) {
+      const row = read.get(id) as { id: number; depth: number; session: string } | undefined;
+      if (!row || row.session !== session) throw new Error('rollup child missing or out of session');
+      depth = Math.max(depth, Number(row.depth) + 1);
+    }
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const id = Number(this.db.prepare('INSERT INTO nodes(session,depth,summary) VALUES(?,?,?)').run(session, depth, summary).lastInsertRowid);
+      const link = this.db.prepare('INSERT OR IGNORE INTO edges(parent,child) VALUES(?,?)');
+      for (const child of childIds) link.run(id, child);
       this.db.exec('COMMIT');
       return id;
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
@@ -86,11 +125,15 @@ export class LcmStore {
     const rows = (preparedNode === undefined
       ? this.db.prepare("SELECT id,summary FROM nodes WHERE session=? AND status='committed' ORDER BY depth DESC,id DESC").all(session)
       : this.db.prepare("SELECT id,summary FROM nodes WHERE session=? AND id=? AND status='pending'").all(session,preparedNode)) as { id: number; summary: string }[];
+    const suppressed = new Set<number>();
     for (const row of rows) {
       if (remaining <= 0) break;
+      if (suppressed.has(Number(row.id))) continue;
       const text = bounded(`[node_id=${row.id}]\n${row.summary}`, remaining);
       if (!text) break;
       result.push({ kind: 'summary', text, node_id: Number(row.id) }); remaining -= text.length;
+      // A higher-layer summary replaces the layer it condenses; children stay recallable.
+      for (const child of this.descendants(Number(row.id))) suppressed.add(child);
     }
     return result;
   }

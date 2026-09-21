@@ -72,6 +72,31 @@ test('same-length messages have distinct canonical raw identities and repeated i
   store.close();
 });
 
+test('rollup condenses sibling leaves into a higher layer and replaces them in assembly', () => {
+  const store = new LcmStore(':memory:');
+  const a = store.ingest('session', 'message:a', { content: 'alpha evidence' });
+  const b = store.ingest('session', 'message:b', { content: 'beta evidence' });
+  const first = store.node('session', 'leaf one', [a], [], false);
+  const second = store.node('session', 'leaf two', [b], [], false);
+  store.markNodeCommitted(first, 1, 2);
+  store.markNodeCommitted(second, 3, 4);
+  assert.equal(store.topLayer('session', 4).length, 2);
+  assert.throws(() => store.rollup('session', 'too few', [first]), /two children/);
+  assert.throws(() => store.rollup('other', 'wrong session', [first, second]), /out of session/);
+  const rollup = store.rollup('session', 'condensed layer one', [first, second]);
+  store.markNodeCommitted(rollup, 5, 6);
+  const rows = store.nodes('session') as { id: number; depth: number }[];
+  const depthOf = (id: number) => Number(rows.find((row) => row.id === id)?.depth);
+  assert.equal(depthOf(rollup), Math.max(depthOf(first), depthOf(second)) + 1);
+  assert.ok((store.db.prepare('SELECT 1 FROM edges WHERE parent=? AND child=?').get(rollup, first)));
+  assert.deepEqual(store.expand('session', a)?.raw, { content: 'alpha evidence' });
+  const context = store.assemble('session', 20000);
+  assert.ok(context.some((entry) => entry.node_id === rollup));
+  assert.ok(!context.some((entry) => entry.node_id === first || entry.node_id === second));
+  assert.equal(store.topLayer('session', 4).length, 1);
+  store.close();
+});
+
 test('nodes expose pending, committed, and aborted lifecycle states', () => {
   const store = new LcmStore(':memory:');
   const raw = store.ingest('session', 'message:1', { text: 'x' });
