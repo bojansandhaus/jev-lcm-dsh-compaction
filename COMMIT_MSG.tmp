@@ -1,0 +1,27 @@
+fix: close the compliance gaps found against the product brief
+
+Attribution: THIRD_PARTY_NOTICES.md now lists every upstream project, its
+verified license, and exactly what was reused, including the DeepSeek Harness
+packages, the Cordis packages, and the design lineage from the Hermes sibling.
+
+Compatibility: the README states the tested versions and keeps the developer
+preview warning while replacing a stale sentence that claimed clean profile,
+loader, and live provider paths were still unverified with the executed
+receipts.
+
+Structure: the workflow is ci.yml, the test modules carry the brief's names
+with no test lost, and the typecheck script now covers the tests through
+tsconfig.test.json, which is how a missing import had been slipping past.
+
+OpenRouter: openrouter_endpoint_path selects between the native Decisions
+surface and a chat completions adapter. The native surface is the default
+because OpenRouter refuses the Jev model on chat completions with a 400, and
+the adapter is covered by response parity and malformed response tests.
+
+Diagnostics: jev_calibrate reports the live threshold and calibration state,
+and with dry_run it probes each configured provider once and reports latency
+and status.
+
+Evaluation: the harness runs three arms, ranking-disabled, jev-only, and
+jev-lcm, and reports recall at budget for each with explicit flags for what it
+cannot reproduce.

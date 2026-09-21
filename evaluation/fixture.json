@@ -1,4 +1,15 @@
 {
-  "status": "retired",
-  "reason": "Manual active message selection is not plugin evaluation. run_eval generates and compacts its own synthetic transcript."
+  "name": "bundled-synthetic-transcript",
+  "note": "Fixture for the three arm recall-at-budget harness. Synthetic transcript only, no production data. The retired stub that pointed at manual active message selection was replaced because manual selection is not plugin evaluation.",
+  "budget_tokens": 10000,
+  "filler_turns": 6,
+  "filler_repeat": 1000,
+  "markers": [
+    "deadbeef1234567"
+  ],
+  "summary": "Synthetic transport summary deliberately omits the evidence marker.",
+  "tool_score": 0.1,
+  "anchor_score": 0.99,
+  "upstream_transcripts_available": false,
+  "upstream_production_run_reproduced": false
 }

@@ -31,6 +31,7 @@ Stop the profile before changing bundle or provider configuration. Start a fresh
 - `jev_providers`: provider order, key-variable presence, cooldown, and sanitized errors.
 - `jev_scores`: candidate decisions.
 - `jev_anchors`: extracted anchors.
+- `jev_calibrate`: threshold and calibration state, or a per-provider dry run probe.
 - `lcm_nodes`: node status and host sequence fields.
 - `lcm_grep` and `lcm_expand`: session-scoped recovery.
 - `dsh --profile web --dump-config`: composed config, before runtime loader mounting.

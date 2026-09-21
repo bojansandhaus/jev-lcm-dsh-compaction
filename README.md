@@ -27,7 +27,7 @@ The numbers in the first column belong to the cited PR. They are not fresh measu
 - Uses calibration rather than the rejected fixed `0.5` default.
 - Batches scoring and marks candidates beyond the state cap `jev_unscored`.
 - Accepts `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, or both, with automatic fallback in `auto` mode.
-- Exposes `lcm_grep`, `lcm_expand`, `lcm_nodes`, `jev_stats`, `jev_providers`, `jev_scores`, and `jev_anchors` as session-scoped tools.
+- Exposes `lcm_grep`, `lcm_expand`, `lcm_nodes`, `jev_stats`, `jev_providers`, `jev_scores`, `jev_anchors`, and `jev_calibrate` as session-scoped tools.
 - Keeps ordinary host condensation available when Jev is disabled or fails.
 
 The archive and tools are package behavior. They do not establish that every DSH host prompt consumes the assembled hints exactly as Hermes LCM does.
@@ -153,6 +153,7 @@ The plugin registers these session-scoped tools through Cordis:
 - `jev_providers`: inspect provider order, environment-variable presence, cooldowns, and sanitized errors.
 - `jev_scores`: inspect candidate ids, scores, actions, and `jev_unscored` state.
 - `jev_anchors`: inspect anchor candidates.
+- `jev_calibrate`: read the live threshold and calibration state, or pass `dry_run` for one synthetic probe per configured provider with latency and status.
 
 The exact DSH command used to invoke a tool depends on the host CLI. The source registration is in [`src/index.ts`](src/index.ts). Treat a tool result as session-scoped evidence, not as proof that the host committed a compaction.
 
@@ -168,7 +169,7 @@ The boundaries stay visible. The archive keeps raw evidence. Native DSH remains 
 
 ## Is this compatible with my DSH installation?
 
-The package declares Node `>=22.19.0`, Cordis `4.0.2`, and DSH `0.1.6-alpha.2` peer packages. DeepSeek Harness is developer-preview software, so compatibility-breaking changes are expected. Pin the DSH range used by your test suite. The repository has local build and test coverage against its installed dependencies. A clean-profile install, a real host loader, and live provider paths still require verification.
+The package declares Node `>=22.19.0`, Cordis `4.0.2`, and DSH `0.1.6-alpha.2` peer packages. DeepSeek Harness is developer-preview software, so compatibility-breaking changes are expected. Pin the DSH range used by your test suite. The repository has local build and test coverage against its installed dependencies. Verified on 2026-09-21: a disposable DSH profile loaded the bundle through the host loader (`tests/loader.test.ts`), the packaged archive installed from a tarball, and both provider surfaces answered live scoring requests with synthetic text only (see `docs/verification.md`). Tested against Node `>=22.19.0`, Cordis `4.0.2`, and DSH `0.1.6-alpha.2`; pin that range, because the harness is in developer preview and may change its interfaces.
 
 ## What are the DSH plugin conventions?
 

@@ -7,6 +7,8 @@ export interface LcmContextEntry { kind: 'summary' | 'protected' | 'pointer'; te
 function bounded(text: string, chars: number): string { return text.length <= chars ? text : `${text.slice(0, Math.max(0, chars - 32))}\n[… context budget …]`; }
 
 /** LCM-owned durable raw log, summary DAG, protected index, and recall surface. */
+export interface LcmNodeRow {id:number;depth:number;summary:string;status:string;host_summary_seq:number|null;host_end_seq:number|null;}
+
 export class LcmStore {
   readonly db: DatabaseSync;
   constructor(path: string) {
@@ -101,7 +103,7 @@ export class LcmStore {
     const put = this.db.prepare('INSERT OR REPLACE INTO hints(session,candidate,data) VALUES(?,?,?)');
     for (const item of candidates) { const value = item as { id: string }; put.run(session, value.id, JSON.stringify(value)); }
   }
-  nodes(session: string): unknown[] { return this.db.prepare('SELECT id,depth,summary,status,host_summary_seq,host_end_seq FROM nodes WHERE session=? ORDER BY depth DESC,id DESC').all(session); }
+  nodes(session: string): LcmNodeRow[] { return this.db.prepare('SELECT id,depth,summary,status,host_summary_seq,host_end_seq FROM nodes WHERE session=? ORDER BY depth DESC,id DESC').all(session) as unknown as LcmNodeRow[]; }
   /** Assemble bounded active context from summaries plus protected verbatim evidence. */
   assemble(session: string, budgetChars = 12000, truncateHeadChars = 300, preparedNode?: number): LcmContextEntry[] {
     let remaining = Math.max(0, budgetChars);

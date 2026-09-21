@@ -1,28 +1,67 @@
-[
-  {
-    "mode": "synthetic-transport-integration",
-    "arm": "ranking-disabled",
-    "budget_tokens": 10000,
-    "token_accounting": "DSH tokenMeter estimate, same host accounting for both arms",
-    "input_tokens": 52695,
-    "active_tokens": 8885,
-    "exact_evidence_retention": 0,
-    "raw_retrieval_retention": 1,
-    "freed_ratio": 0.8313881772464181,
-    "model_calls": 1,
-    "production_comparison": false
+{
+  "fixture": {
+    "name": "bundled-synthetic-transcript",
+    "note": "Fixture for the three arm recall-at-budget harness. Synthetic transcript only, no production data. The retired stub that pointed at manual active message selection was replaced because manual selection is not plugin evaluation.",
+    "budget_tokens": 10000
   },
-  {
-    "mode": "synthetic-transport-integration",
-    "arm": "jev-lcm",
-    "budget_tokens": 10000,
-    "token_accounting": "DSH tokenMeter estimate, same host accounting for both arms",
-    "input_tokens": 52695,
-    "active_tokens": 8942,
-    "exact_evidence_retention": 1,
-    "raw_retrieval_retention": 1,
-    "freed_ratio": 0.8303064806907676,
-    "model_calls": 1,
-    "production_comparison": false
+  "arms": [
+    {
+      "mode": "synthetic-transport-integration",
+      "arm": "ranking-disabled",
+      "budget_tokens": 10000,
+      "token_accounting": "DSH tokenMeter estimate, the same host accounting for every arm",
+      "input_tokens": 52745,
+      "active_tokens": 138,
+      "budget_converged": true,
+      "markers_total": 1,
+      "markers_retained": 0,
+      "recall_at_budget": 0,
+      "raw_store": true,
+      "raw_retrieval_retention": 1,
+      "freed_ratio": 0.9973836382595507,
+      "model_calls": 1
+    },
+    {
+      "mode": "synthetic-transport-integration",
+      "arm": "jev-only",
+      "budget_tokens": 10000,
+      "token_accounting": "DSH tokenMeter estimate, the same host accounting for every arm",
+      "input_tokens": 52745,
+      "active_tokens": 52821,
+      "budget_converged": false,
+      "markers_total": 1,
+      "markers_retained": 1,
+      "recall_at_budget": 1,
+      "raw_store": false,
+      "raw_retrieval_retention": null,
+      "freed_ratio": -0.0014408948715518058,
+      "model_calls": 1,
+      "hint_chars": 270
+    },
+    {
+      "mode": "synthetic-transport-integration",
+      "arm": "jev-lcm",
+      "budget_tokens": 10000,
+      "token_accounting": "DSH tokenMeter estimate, the same host accounting for every arm",
+      "input_tokens": 52745,
+      "active_tokens": 200,
+      "budget_converged": true,
+      "markers_total": 1,
+      "markers_retained": 1,
+      "recall_at_budget": 1,
+      "raw_store": true,
+      "raw_retrieval_retention": 1,
+      "freed_ratio": 0.9962081713906531,
+      "model_calls": 1
+    }
+  ],
+  "verdict": {
+    "production_recall_at_budget": 0,
+    "jev_lcm_recall_at_budget": 1,
+    "jev_lcm_meets_or_beats_production": true,
+    "jev_only_budget_converged": false,
+    "jev_only_recall_at_budget": 1,
+    "upstream_transcripts_available": false,
+    "upstream_production_run_reproduced": false
   }
-]
+}

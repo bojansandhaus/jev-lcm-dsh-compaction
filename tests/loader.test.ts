@@ -33,7 +33,7 @@ test('shipped bundle disables native engine and mounts Jev through the real load
   patches.push({id:'jev-lcm-compaction',config:{databasePath:':memory:',auto:false}});
   ctx.baseUrl=pathToFileURL(dir).href+'/';
   await ctx.plugin(Loader);ctx.loader.builtins.include=Include;
-  ctx.loader.internal={version:'v2',async import(specifier:string){if(!modules.has(specifier))throw new Error('unknown module '+specifier);return modules.get(specifier);}} as NonNullable<typeof ctx.loader.internal>;
+  ctx.loader.internal={version:'v2',async import(specifier:string){if(!modules.has(specifier))throw new Error('unknown module '+specifier);return modules.get(specifier);}} as unknown as NonNullable<typeof ctx.loader.internal>;
   await ctx.loader.create({name:'cordis:include',config:{path:pathToFileURL(path).href,patches}});
   await ctx.loader.await();
   assert.ok(ctx.get('compaction') instanceof plugin.JevLCMCompactionEngine);

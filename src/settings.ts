@@ -1,6 +1,7 @@
 export interface Settings {
   jev_provider: 'auto' | 'typesafe' | 'openrouter';
   typesafe_base_url: string; openrouter_base_url: string;
+  openrouter_endpoint_path: string;
   jev_endpoint_path: string; jev_model: string; openrouter_model: string;
   jev_fallback_enabled: boolean; jev_fallback_order: ProviderName[];
   jev_fallback_on: string[]; jev_fallback_cooldown_s: number;
@@ -17,7 +18,7 @@ export interface Settings {
 export type ProviderName = 'typesafe' | 'openrouter';
 export const defaults: Settings = {
   jev_provider:'auto', typesafe_base_url:'https://api.typesafe.ai/v1',
-  openrouter_base_url:'https://openrouter.ai/api', jev_endpoint_path:'/systemone',
+  openrouter_base_url:'https://openrouter.ai/api', openrouter_endpoint_path:'/alpha/decisions', jev_endpoint_path:'/systemone',
   jev_model:'jev-latest', openrouter_model:'~typesafe/jev-latest',
   jev_fallback_enabled:true, jev_fallback_order:['typesafe','openrouter'],
   jev_fallback_on:['transport_error','timeout','401','403','429','5xx'],

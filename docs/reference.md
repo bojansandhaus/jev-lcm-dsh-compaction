@@ -23,7 +23,8 @@ The TypeScript defaults in `src/settings.ts` and the bundle defaults in `src/ind
 | `TYPESAFE_API_KEY` | unset | TypeSafe credential. |
 | `OPENROUTER_API_KEY` | unset | OpenRouter credential. |
 | `typesafe_base_url` | `https://api.typesafe.ai/v1` | TypeSafe base. |
-| `openrouter_base_url` | `https://openrouter.ai/api` | Current OpenRouter adapter base. |
+| `openrouter_base_url` | `https://openrouter.ai/api` | OpenRouter base. |
+| `openrouter_endpoint_path` | `/alpha/decisions` | OpenRouter surface. The native Decisions path, or any other path to select the chat completions adapter. |
 | `jev_endpoint_path` | `/systemone` | TypeSafe path. |
 | `jev_model` | `jev-latest` | TypeSafe model. |
 | `openrouter_model` | `~typesafe/jev-latest` | Current OpenRouter adapter model. |
@@ -68,7 +69,7 @@ Endpoint validation decodes paths, rejects queries, fragments, credentials, unsa
 
 ## Metrics
 
-`jev_stats` includes candidate, keep, anchor, unscored, call, fallback, provider, threshold, LCM node, text-floor, freed-per-compaction, and unevaluated recall fields. `jev_providers` reports order, environment-variable names present, cooldowns, errors, and last provider. `jev_scores` and `jev_anchors` expose candidate diagnostics. Three consecutive cycles below 20% freed space emit a warning in the metrics implementation.
+`jev_stats` includes candidate, keep, anchor, unscored, call, fallback, provider, threshold, LCM node, text-floor, freed-per-compaction, and unevaluated recall fields. `jev_calibrate` reports the live threshold, whether calibration is active, and how many samples the rolling window holds; with `dry_run` it sends one synthetic probe per configured provider and returns latency and status for each, including `error` with the missing environment-variable name when a provider has no key. `jev_providers` reports order, environment-variable names present, cooldowns, errors, and last provider. `jev_scores` and `jev_anchors` expose candidate diagnostics. Three consecutive cycles below 20% freed space emit a warning in the metrics implementation.
 
 ## Sources and lineage
 
