@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.coverage
+.venv/
+node_modules/
+lib/
+dist/
+build/
+*.tgz
+*.sqlite*
+*.db*
+.env
