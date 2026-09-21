@@ -1,0 +1,4 @@
+{
+  "status": "retired",
+  "reason": "Manual active message selection is not plugin evaluation. run_eval generates and compacts its own synthetic transcript."
+}

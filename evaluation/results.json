@@ -1,0 +1,28 @@
+[
+  {
+    "mode": "synthetic-transport-integration",
+    "arm": "ranking-disabled",
+    "budget_tokens": 10000,
+    "token_accounting": "DSH tokenMeter estimate, same host accounting for both arms",
+    "input_tokens": 52695,
+    "active_tokens": 8885,
+    "exact_evidence_retention": 0,
+    "raw_retrieval_retention": 1,
+    "freed_ratio": 0.8313881772464181,
+    "model_calls": 1,
+    "production_comparison": false
+  },
+  {
+    "mode": "synthetic-transport-integration",
+    "arm": "jev-lcm",
+    "budget_tokens": 10000,
+    "token_accounting": "DSH tokenMeter estimate, same host accounting for both arms",
+    "input_tokens": 52695,
+    "active_tokens": 8942,
+    "exact_evidence_retention": 1,
+    "raw_retrieval_retention": 1,
+    "freed_ratio": 0.8303064806907676,
+    "model_calls": 1,
+    "production_comparison": false
+  }
+]

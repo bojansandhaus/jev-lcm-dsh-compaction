@@ -29,3 +29,20 @@ test('SQLite raw ownership and DAG links survive reopen',()=>{const db=new LcmSt
 test('bad input and low freed warnings',()=>{for(const data of [null,{}, {answers:{x:{noul:true}}},{answers:{x:{noul:2}}}])assert.throws(()=>parseAnswers(data,['x']),/malformed/);assert.throws(()=>endpoint('https://api.typesafe.ai/v1'+String.fromCharCode(92),'/systemone'));assert.throws(()=>endpoint('https://example.test','/%2e%2e/x'));const logs:string[]=[];const m=new Metrics(s=>logs.push(s));for(let i=0;i<3;i+=1)m.compaction(100,90,1,30);assert.equal(logs.length,1);assert.equal(m.values.lcm_recall_at_budget,null);});
 
 test('CJK state cap preserves candidates or marks them unscored',()=>{const s=settings({max_state_tokens:1000,max_request_tokens:2000});const b=shape([{role:'user',content:'中文'.repeat(10000)}],[],s);assert.ok(tokens(b.state)<=1000);assert.ok(b.tier>=2);});
+
+test('missing provider keys disable ranking while LCM condensation proceeds',async()=>{
+ const s=settings({min_result_chars:0});const db=new LcmStore(':memory:');
+ const raw=db.ingest('s','message:1',{role:'assistant',content:'keep `abc123def456`'});
+ const p=new Prepass(s,new ProviderChain(s,{}));
+ const messages:Message[]=[{role:'user',content:'first'},{role:'assistant',content:'keep `abc123def456`'},{role:'user',content:'fresh'}];
+ messages.forEach((m,i)=>{m.store_id=db.ingest('s','m'+i,{...m});});p.collect(messages,2);
+ await p.flush(true);
+ assert.equal(p.metrics.values.jev_fallbacks,1);
+ assert.ok(Number(p.metrics.values.jev_unscored_count)>0);
+ assert.equal(p.hintBlock(),'');
+ const node=db.node('s','default LCM condensation summary',[raw]);db.markNodeCommitted(node,1,2);
+ const context=db.assemble('s',4000);
+ assert.ok(context.some(e=>e.kind==='summary'));
+ assert.ok(context.every(e=>e.kind!=='protected'));
+ db.close();
+});

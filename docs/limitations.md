@@ -1,5 +1,7 @@
 # Experimental release boundaries
 
+[Hermes PR #116246](https://github.com/NousResearch/hermes-agent/pull/116246) motivates this project: ranking alone cannot replace text condensation. This page records limits or review evidence for the scoring, retention, storage, and compaction fixes.
+
 This is a release candidate, not a production-certified replacement.
 
 Tests use synthetic text and scores. HTTP tests use loopback servers. They do not measure provider quality, real billing, or comparative performance against private transcripts.

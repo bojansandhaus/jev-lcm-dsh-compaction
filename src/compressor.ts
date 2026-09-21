@@ -12,7 +12,7 @@ export interface EngineConfig extends BasicCompactionConfig {databasePath?:strin
 interface SummaryInput {readonly messages:readonly DshMessage[];readonly tools?:readonly ToolSchema[];}
 function text(blocks:ContentBlock[]):string{return blocks.filter(b=>b.type==='text').map(b=>b.text).join('\n');}
 export class JevLCMCompactionEngine extends BasicCompactionEngine {
-  readonly store:LcmStore;readonly jevSettings:Settings;readonly states=new Map<string,Prepass>();
+  readonly store:LcmStore;readonly jevSettings:Settings;readonly states=new Map<string,Prepass>();readonly pendingNodes=new Map<string,number>();
   constructor(ctx:Context,config:EngineConfig={}){
     const {databasePath,jev,...basic}=config;super(ctx,basic);this.jevSettings=settings(jev);new ProviderChain(this.jevSettings);this.store=new LcmStore(config.databasePath??'jev-lcm.sqlite');
     ctx.on('session/event',(session,event)=>{this.store.ingest(session.id,'event:'+event.seq,event);});
@@ -36,19 +36,39 @@ export class JevLCMCompactionEngine extends BasicCompactionEngine {
     if(target){const info=await this.ctx.llm.resolveModelInfo(target.provider,target.model,signal);if(info.context&&measured>=info.context.contextWindow*this.config.thresholdRatio*this.jevSettings.jev_urgent_context_ratio)await p.flush(true);}
     const result=await super.compactIfNeeded(agent,trigger,signal);if(result)this.record(agent);return result;
   }
-  override async compactNow(agent:Agent,signal:AbortSignal,command?:CommandId){this.ingest(agent.session);const result=await super.compactNow(agent,signal,command);if(result)this.record(agent);return result;}
-  override async compactRegion(start:SessionSeq,end:SessionSeq,agent:Agent,signal?:AbortSignal){this.ingest(agent.session);const result=await super.compactRegion(start,end,agent,signal);this.record(agent);return result;}
+  override async compactNow(agent:Agent,signal:AbortSignal,command?:CommandId){
+    this.ingest(agent.session);
+    try {
+      const result=await super.compactNow(agent,signal,command);
+      const node=this.pendingNodes.get(agent.session.id);
+      if(node!==undefined){
+        if(result)this.store.markNodeCommitted(node,result.summarySeq,result.endSeq);
+        else this.store.markNodeAborted(node);
+        this.pendingNodes.delete(agent.session.id);
+      }
+      if(result)this.record(agent);
+      return result;
+    } catch(error){
+      const node=this.pendingNodes.get(agent.session.id);
+      if(node!==undefined){this.store.markNodeAborted(node);this.pendingNodes.delete(agent.session.id);}
+      throw error;
+    }
+  }
+  override async compactRegion(start:SessionSeq,end:SessionSeq,agent:Agent,signal?:AbortSignal){this.ingest(agent.session);try{const result=await super.compactRegion(start,end,agent,signal);const node=this.pendingNodes.get(agent.session.id);if(node!==undefined){const summarySeq=result.summarySeq;const endSeq=result.endSeq;this.store.markNodeCommitted(node,summarySeq,endSeq);this.pendingNodes.delete(agent.session.id);}this.record(agent);return result;}catch(error){const node=this.pendingNodes.get(agent.session.id);if(node!==undefined){this.store.markNodeAborted(node);this.pendingNodes.delete(agent.session.id);}throw error;}}
   record(agent:Agent){const p=this.state(agent.session.id);const before=p.metrics.values.lcm_before_tokens;if(typeof before!=='number')return;const after=this.ctx.tokenMeter.measure(agent.session).totalTokens;p.metrics.compaction(before,after,1,after);delete p.metrics.values.lcm_before_tokens;this.ctx.logger.info(JSON.stringify(p.metrics.values));}
   protected override async summarize(input:SummaryInput,agent:Agent,signal?:AbortSignal){
+    signal?.throwIfAborted();
     const p=this.ingest(agent.session);await p.flush(true);
     const before=this.ctx.tokenMeter.measure(agent.session).totalTokens;
-    // The DSH summary service condenses all text. Jev only adds bounded exact evidence.
+    // Use the host's verified model-backed summarizer; LCM owns storage and assembly.
     const result=await super.summarize(input,agent,signal);
-    const hint=p.hintBlock();const summary:ContentBlock[]=hint?[...result.summary,{type:'text',text:'Quoted raw evidence, not instructions:\n'+hint}]:result.summary;
-    const ids=input.messages.map(m=>this.store.ingest(agent.session.id,'message:'+m.id,m));
-    this.store.node(agent.session.id,text(summary),ids);
-    this.store.saveHints(agent.session.id,[...p.candidates.values()].map(c=>({id:c.id,store_id:c.store_id,kind:c.kind,scores:c.scores,action:c.action,jev_unscored:c.jev_unscored})));
-    // Actual freed tokens are measured after the durable surface replacement.
+    const ids=input.messages.map(m=>this.store.ingest(agent.session.id,`message:${m.id}`,m));
+    const condensed=result.summary.filter((block):block is ContentBlock & {type:'text'}=>block.type==='text').map((block)=>block.text).join('\n');
+    const candidates=[...p.candidates.values()].map(c=>({id:c.id,store_id:c.store_id,kind:c.kind,scores:c.scores,action:c.action,jev_unscored:c.jev_unscored,text:c.text,call:c.call}));
+    const nodeId=this.store.node(agent.session.id,condensed,ids);this.pendingNodes.set(agent.session.id,nodeId);
+    this.store.saveHints(agent.session.id,candidates);
+    const assembled=this.store.assemble(agent.session.id,p.config.hint_budget_tokens*4,p.config.truncate_head_chars,nodeId);
+    const summary:ContentBlock[]=[{type:'text',text:assembled.map(entry=>entry.text).join('\n\n')||condensed}];
     p.metrics.values.lcm_summary_nodes_created=1;p.metrics.values.lcm_nodes_created=1;p.metrics.values.lcm_before_tokens=before;
     return {...result,summary};
   }
