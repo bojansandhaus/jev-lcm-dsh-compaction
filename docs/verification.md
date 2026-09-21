@@ -24,3 +24,11 @@ Hermes PR #116246 motivates the acceptance gates: compaction must retain useful 
 ## Release content
 
 The `1.0.0` changelog section and [RELEASE_NOTES_v1.0.0.md](../RELEASE_NOTES_v1.0.0.md) contain the requested release content and are marked prepared and unpublished. No stable release is asserted.
+
+## Publication record
+
+- Continuous integration, workflow `Tests`, was read back green on the pushed rework commits: run `35636655375` for `46b3f6c` in this repository. Later documentation-only commits run the same workflow.
+- Repository topics include the discovery topic required by the brief: `dsh-plugin` on the DSH repository, plus `lcm`, `compaction`, `context-management`, and `jev` on both.
+- The `v1.0.0` release exists as a draft and is marked prerelease, with content taken from `RELEASE_NOTES_v1.0.0.md`. A draft release is not a published release and the tag does not exist until it is published.
+- npm publication is still blocked: `npm whoami` reports no session on this machine. For this distribution the remaining command is `npm publish --access public`.
+
