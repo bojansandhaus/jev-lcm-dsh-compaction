@@ -4,7 +4,7 @@ Jev-LCM Compaction Plugin for DeepSeek Harness: Jev ranks stale evidence before 
 
 Fixes the Jev-only compaction failure modes identified in [NousResearch/hermes-agent#116246](https://github.com/NousResearch/hermes-agent/pull/116246).
 
-Publication state: this candidate is published as a GitHub prerelease at the commit whose CI run passed, with the built artifact `bojansandhaus-jev-lcm-dsh-compaction-1.0.0-rc.1.tgz` (42694 bytes) attached to the release. No registry publication has happened, so no npm availability is claimed, and the `v1.0.0` tag remains unused.
+Publication state: this candidate is published as a GitHub prerelease at the commit whose CI run passed, with the built artifact `bojansandhaus-jev-lcm-dsh-compaction-1.0.0-rc.1.tgz` attached to the release. No registry publication has happened, so no npm availability is claimed, and the `v1.0.0` tag remains unused.
 
 ### Added
 

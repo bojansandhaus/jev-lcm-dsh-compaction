@@ -32,6 +32,6 @@ The `1.0.0` changelog section and [RELEASE_NOTES_v1.0.0.md](../RELEASE_NOTES_v1.
 
 - Continuous integration, workflow `Tests`, passes on the default branch: the runs for the pushed rework commits, including `35637337297`, were read back green. Later documentation-only commits run the same workflow.
 - Repository topics include the discovery topic required by the brief: `dsh-plugin` on the DSH repository, plus `lcm`, `compaction`, `context-management`, and `jev` on both.
-- The release candidate is published as a GitHub prerelease tagged `v1.0.0-rc.1` at the commit whose CI run passed, with the built artifact `bojansandhaus-jev-lcm-dsh-compaction-1.0.0-rc.1.tgz` (42694 bytes) attached and verified downloadable. Registry publication has not happened, so no npm availability is claimed, and the `v1.0.0` tag is still unused.
+- The release candidate is published as a GitHub prerelease tagged `v1.0.0-rc.1` at the commit whose CI run passed, with the built artifact `bojansandhaus-jev-lcm-dsh-compaction-1.0.0-rc.1.tgz` attached and verified downloadable. Registry publication has not happened, so no npm availability is claimed, and the `v1.0.0` tag is still unused.
 - npm publication is still blocked: `npm whoami` reports no session on this machine. For this distribution the remaining command is `npm publish --access public`.
 
