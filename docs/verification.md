@@ -26,12 +26,12 @@ Hermes PR #116246 motivates the acceptance gates: compaction must retain useful 
 
 ## Release content
 
-The `1.0.0` changelog section and [RELEASE_NOTES_v1.0.0.md](../RELEASE_NOTES_v1.0.0.md) contain the requested release content and are marked prepared and unpublished. No stable release is asserted.
+The `1.0.0` changelog section and [RELEASE_NOTES_v1.0.0.md](../RELEASE_NOTES_v1.0.0.md) contain the requested release content. No stable release is asserted.
 
 ## Publication record
 
 - Continuous integration, workflow `Tests`, passes on the default branch: the runs for the pushed rework commits, including `35637337297`, were read back green. Later documentation-only commits run the same workflow.
 - Repository topics include the discovery topic required by the brief: `dsh-plugin` on the DSH repository, plus `lcm`, `compaction`, `context-management`, and `jev` on both.
-- The `v1.0.0` release exists as a draft and is marked prerelease, with content taken from `RELEASE_NOTES_v1.0.0.md`. A draft release is not a published release and the tag does not exist until it is published.
+- The release candidate is published as a GitHub prerelease tagged `v1.0.0-rc.1` at the commit whose CI run passed, with the built artifact `bojansandhaus-jev-lcm-dsh-compaction-1.0.0-rc.1.tgz` (42694 bytes) attached and verified downloadable. Registry publication has not happened, so no npm availability is claimed, and the `v1.0.0` tag is still unused.
 - npm publication is still blocked: `npm whoami` reports no session on this machine. For this distribution the remaining command is `npm publish --access public`.
 
