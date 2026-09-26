@@ -1,10 +1,10 @@
-## [1.0.0-rc.4] - 2026-09-26 (prepared, not yet tagged)
+## [1.0.0-rc.4] - 2026-09-26 (published)
 
 Jev-LCM compaction for DeepSeek Harness: Jev ranks stale evidence before lossless context condensation.
 
 This candidate makes the local Laya route behave the way the DOGA fork behaves. The opt-in `laya_then_hosted` chain now bounds its own remote egress: three consecutive local failures still reach the hosted hop, and every further failure until a local success keeps the request local and re-raises the local error. The same release accepts DOGA's mode names as aliases, so a profile written for DOGA can name the same three arrangements here. The default, `auto`, and every existing provider value are unchanged.
 
-Publication state: this candidate is committed and pushed, and no tag or GitHub release has been cut for it, so no registry or release availability is claimed. Nothing here selects Laya by default, installs Laya, or edits a live DSH profile.
+Publication state: published as the GitHub prerelease **v1.0.0-rc.4**, with the npm tarball attached to that release. No registry publication exists: the package is distributed from the GitHub release, not from npm. Nothing here selects Laya by default, installs Laya, or edits a live DSH profile.
 
 ### Added
 

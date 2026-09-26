@@ -1,10 +1,10 @@
-## [1.0.0-rc.3] - 2026-09-26 (prepared, not yet tagged)
+## [1.0.0-rc.3] - 2026-09-26 (published)
 
 Jev-LCM compaction for DeepSeek Harness: Jev ranks stale evidence before lossless context condensation.
 
 This candidate adds the third way to reach a score. The engine could already run over a TypeSafe or OpenRouter key, or entirely locally against a Laya server with no key at all. `laya_then_hosted` is the explicit opt-in that does both in order: the local server answers first, and the hosted providers behind it answer when the local hop fails. The default and the standalone local route are unchanged, so a profile that leaves `jev_provider` at `auto`, or at `laya`, behaves exactly as it did in `1.0.0-rc.2`.
 
-Publication state: this candidate is committed and pushed, and no tag or GitHub release has been cut for it, so no registry or release availability is claimed. Nothing here installs Laya, selects the new mode by default, or edits a live DSH profile.
+Publication state: published as the GitHub prerelease **v1.0.0-rc.3**, with the npm tarball attached to that release. No registry publication exists: the package is distributed from the GitHub release, not from npm. Nothing here installs Laya, selects the new mode by default, or edits a live DSH profile.
 
 ### Added
 
