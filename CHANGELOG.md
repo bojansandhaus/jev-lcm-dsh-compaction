@@ -35,6 +35,36 @@ Tamara Tran contributed the upstream state-shaping and two-question scoring desi
 
 The project uses the MIT license. See [third party notices](THIRD_PARTY_NOTICES.md) for licenses and specific reuse.
 
+## [1.0.0-rc.4] - 2026-09-26
+
+Bounds the local Laya fallback, names the DOGA decision modes, and stops one log line from carrying host model text. The default and every existing provider value are unchanged.
+
+### Added
+
+- A consecutive-failure breaker on the local hop, ported from the DOGA fork's v1.3.0 behaviour. Three consecutive local failures still try the hosted hop; every further failure suppresses the hosted leg, logs `laya_fallback_suppressed count=<n> limit=3 reason=<category>`, and re-raises the local error instead of answering remotely. A successful local answer clears the count on both the local routes. The count is per process and resets on restart, which the per-provider cooldown cannot do: a cooldown is a per-chain timer that expires by itself, so a host that fails on every request still receives one remote attempt per cooldown window.
+- `laya_local` and `laya_with_jev_fallback` as accepted aliases for `laya` and `laya_then_hosted`. `settings()` resolves them to the canonical value, so no alias reaches a provider chain, a diagnostic, or a log. Every existing value still resolves, and anything else is rejected with a named list of what is accepted.
+- `src/laya-breaker.ts`: one module-level counter plus a promise-chain mutex that serializes the increment and the reset, mirroring the lock the DOGA fork holds around its counter.
+- `tests/laya-fallback-breaker.test.ts`, nine contracts: three fallbacks then suppression with no hosted call; a healthy local call resetting a tripped counter; the same reset on the plain local route; a weak but valid local answer never triggering the fallback; a local-only route never spending breaker budget; a non-trigger failure never spending it either; the aliases resolving to the canonical values; the order validator still rejecting `laya` under either alias; and the fallback and suppression logs carrying the failure category only.
+
+### Changed
+
+- `jev-lcm rollup skipped:` now logs the error class name instead of `error.message`, so a host summarizer failure cannot put summarized content into a log line.
+- `settings()` accepts the alias spelling in its input type and its error names the accepted values. `EngineConfig.jev` is typed as that accepted input shape, so a profile can use the DOGA names without a cast.
+- `jev_providers` and `jev_stats`, `docs/reference.md` and the README now describe the local route as the DOGA fork's `laya_local` and the opt-in chain as its `laya_with_jev_fallback`.
+
+### Evaluation and limitations
+
+- The DOGA fork's matched 100-question, three-mode evaluation is the headline quality evidence for the local classifier, and it is DOGA's report, not re-measured here: against 100 authored labels, Laya local agreed on goal 56/100, mode 41/100, stakes 37/100, scenario need 59/100 and high-versus-low ambiguity 67/100, while Jev with the API agreed on 88, 68, 67, 70 and 87. Laya detected none of the 30 authored high-ambiguity labels at the existing 0.7 threshold. Keep the hosted providers as the default ranking route until Laya questions and checkpoints are validated on new labels.
+- The breaker bounds repeated remote egress after local errors. It cannot detect a valid yet incorrect local judgment, so the fallback stays error-only and never fires on a weak or low-confidence answer. The breaker does not make Laya's confidence calibrated, and nothing here tunes the 0.7 threshold.
+- A failure whose reason is not a configured trigger never reaches the hosted hop, so it does not spend breaker budget. That is deliberate: the count exists to bound remote egress, not to score the local model.
+
+### Verification
+
+- 63 tests pass, `pnpm run typecheck` passes for source and tests, `pnpm run build` passes, and `pnpm pack` builds the 1.0.0-rc.4 archive.
+- Live, 2026-09-26, base English checkpoint on CPU at `127.0.0.1:8123`: the alias `laya_with_jev_fallback` resolved to `laya_then_hosted`, built `['laya','typesafe','openrouter']`, and answered three consecutive calls from the local hop in `422 ms`, `528 ms` and `547 ms` with `0.0569` for the probe question, `calls=1`, `fallback_count=0`, `last_provider=laya`, breaker `0`, and only the local URL on the wire.
+- Live breaker evidence through the real transport with the local base repointed at a dead port and no hosted key: calls one to three each attempted the hosted hop and were answered `401` by the live endpoints (or `transport_error` while the first DNS lookup was cold), reaching breaker counts 1, 2 and 3; the fourth call attempted only the dead local port, raised `transport_error`, and logged `laya_fallback_suppressed count=4 limit=3 reason=transport_error` with zero hosted attempts.
+- The hosted leg is covered by unit tests with an injected synthetic transport only. No hosted key exists in this checkout, so no hosted score is claimed; the live hosted calls above returned `401`, which is a fallback trigger rather than an answer.
+
 ## [1.0.0-rc.3] - 2026-09-26
 
 Adds the third provider route: the local Laya server first with the hosted Jev providers behind it, as an explicit opt-in. The default and the existing local route are unchanged.

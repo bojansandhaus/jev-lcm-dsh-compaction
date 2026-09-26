@@ -7,9 +7,9 @@ import type { CommandId } from '@deepseek-ai/dsh-commands/brand';
 import type { Session,SessionSeq } from '@deepseek-ai/dsh-session';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import type { Message as DshMessage,ContentBlock,ToolSchema } from '@deepseek-ai/dsh-llm';
-import { Settings,settings } from './settings.js';import { Prepass } from './prepass.js';import { LcmStore } from './store.js';import { Message } from './anchors.js';import { ProviderChain } from './providers.js';
+import { Settings,SettingsInput,settings } from './settings.js';import { Prepass } from './prepass.js';import { LcmStore } from './store.js';import { Message } from './anchors.js';import { ProviderChain } from './providers.js';
 
-export interface EngineConfig extends BasicCompactionConfig {databasePath?:string;jev?:Partial<Settings>;}
+export interface EngineConfig extends BasicCompactionConfig {databasePath?:string;jev?:SettingsInput;}
 interface SummaryInput {readonly messages:readonly DshMessage[];readonly tools?:readonly ToolSchema[];}
 function text(blocks:ContentBlock[]):string{return blocks.filter(b=>b.type==='text').map(b=>b.text).join('\n');}
 export class JevLCMCompactionEngine extends BasicCompactionEngine {
@@ -90,8 +90,10 @@ export class JevLCMCompactionEngine extends BasicCompactionEngine {
     if(p)p.metrics.values.lcm_rollup_nodes_created=Number(p.metrics.values.lcm_rollup_nodes_created??0)+1;
     return nodeId;
   }
-  /** Rollup is an optimisation; a host failure must never fail the compaction itself. */
+  /** Rollup is an optimisation; a host failure must never fail the compaction itself.
+   *  The log records the error category only: a host summarizer error message can
+   *  quote the content it was summarizing, and this line is not a place for that. */
   async rollupIfNeeded(agent:Agent,signal?:AbortSignal):Promise<void>{
-    try{await this.rollupOnce(agent,signal);}catch(error){this.ctx.logger.warn('jev-lcm rollup skipped: '+(error instanceof Error?error.message:'rollup_failed'));}
+    try{await this.rollupOnce(agent,signal);}catch(error){this.ctx.logger.warn('jev-lcm rollup skipped: '+(error instanceof Error?error.name:'rollup_failed'));}
   }
 }

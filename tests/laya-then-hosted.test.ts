@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { settings } from '../src/settings.js';
 import { ProviderChain, probeProviders } from '../src/providers.js';
 import { ProviderError } from '../src/jev-client.js';
+import { resetLayaBreaker } from '../src/laya-breaker.js';
 
 const QUESTION={x:{type:'noul' as const,instructions:'keep?'}};
 const LOCAL='http://127.0.0.1:8000/v1/systemone';
@@ -51,6 +52,10 @@ test('a local success answers from the local hop and never touches a hosted URL'
 
 test('every configured local failure falls through to the hosted hop',async()=>{
   for(const reason of ['transport_error','timeout','401','403','429','5xx']){
+    // The breaker counts consecutive local failures for the whole process, so
+    // each trigger class is exercised on a fresh count. The bounded behaviour
+    // itself is pinned in tests/laya-fallback-breaker.test.ts.
+    resetLayaBreaker();
     const {seen,transport}=split({noul:.37},()=>new ProviderError(reason));
     const chain=new ProviderChain(settings({jev_provider:'laya_then_hosted'}),BOTH,transport);
     assert.deepEqual(await chain.score({},QUESTION),{x:.37},reason);
@@ -70,6 +75,7 @@ test('every configured local failure falls through to the hosted hop',async()=>{
 });
 
 test('a local failure records the fallback, the answering provider and the local cooldown',async()=>{
+  resetLayaBreaker();
   const log:string[]=[],now=[1];
   const {transport}=split();
   const config=settings({jev_provider:'laya_then_hosted'});
@@ -93,6 +99,7 @@ test('a local failure records the fallback, the answering provider and the local
 });
 
 test('the chain walks past every failing hosted provider and retries the last one',async()=>{
+  resetLayaBreaker();
   const seen:string[]=[];
   const chain=new ProviderChain(settings({jev_provider:'laya_then_hosted'}),BOTH,async url=>{seen.push(url);if(url===OPENROUTER)return {answers:{x:{noul:.5}}};throw new ProviderError('5xx');});
   assert.deepEqual(await chain.score({},QUESTION),{x:.5});

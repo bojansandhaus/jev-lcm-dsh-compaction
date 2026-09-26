@@ -19,7 +19,7 @@ The TypeScript defaults in `src/settings.ts` and the bundle defaults in `src/ind
 | `retainRatio` | `0.16` | Bundle retention ratio. |
 | `maxTokens` | `8192` | Engine context budget. |
 | `auto` | `true` | Enable automatic compaction behavior. |
-| `jev_provider` | `auto` | `auto`, `typesafe`, `openrouter`, `laya` for a local server, or `laya_then_hosted` for the local server first with the hosted providers behind it. |
+| `jev_provider` | `auto` | `auto`, `typesafe`, `openrouter`, `laya` for a local server, or `laya_then_hosted` for the local server first with the hosted providers behind it. `laya_local` is accepted as an alias for `laya` and `laya_with_jev_fallback` as an alias for `laya_then_hosted`; both resolve to the canonical value at configuration time. |
 | `TYPESAFE_API_KEY` | unset | TypeSafe credential. |
 | `OPENROUTER_API_KEY` | unset | OpenRouter credential. |
 | `LAYA_API_KEY` | unset | Optional bearer for a local `laya-serve` started with `LAYA_API_KEY`. The local route needs no credential. |
@@ -63,6 +63,26 @@ Three selectable routes exist. `auto` and the pinned `typesafe`, `openrouter` an
 
 Privacy consequence: plain `laya` never sends state off the machine; `laya_then_hosted` does, because a failed local attempt re-sends the same state to the hosted API. `auto` still never selects the local route, `laya` stays a single-provider route with no fallback, and `jev_fallback_order` still rejects `laya` as a member, so `laya_then_hosted` is the only mode in which the local server leads a chain. Hosted answers through this mode are covered by unit tests with a synthetic transport; no live hosted answer is claimed.
 
+### DOGA mode names
+
+The DOGA fork of this design exposes exactly three decision modes. Two of those names are accepted here as aliases for values this package already ships, and the alias is resolved in `settings()` before anything else reads the configuration, so it never reaches a provider chain, a diagnostic, or a log.
+
+| DOGA mode | Value here | Behaviour |
+|---|---|---|
+| `jev_api` | `auto`, `typesafe`, or `openrouter` | Hosted Jev ranking. This package splits that arrangement into `auto` plus the two pinned values, so `jev_api` is not accepted as an alias; a rejected value reports `invalid jev_provider` and names what is accepted. |
+| `laya_local` | `laya` | The local `laya-serve` route alone, with no remote leg. |
+| `laya_with_jev_fallback` | `laya_then_hosted` | The local hop first, hosted providers only on a local failure, bounded by the breaker below. |
+
+### Consecutive-failure breaker
+
+`laya_then_hosted` bounds its own remote egress. A local failure whose reason is a configured trigger increments one module-level counter; while the count is at or below three the hosted hop is attempted; past three the hosted leg is suppressed, `laya_fallback_suppressed count=<n> limit=3 reason=<category>` is logged through the engine's warning logger, and the local error is re-raised instead of answered remotely. A successful local answer clears the counter, on `laya` and on `laya_then_hosted` alike. The counter lives in the process, so it resets on restart, and no other route spends it: a standalone `laya` profile, a chain collapsed by `jev_fallback_enabled: false`, and a failure whose reason is not a configured trigger all leave it at zero. The per-provider cooldown is a different instrument, not a substitute: it postpones the next attempt to one provider and expires by itself, so a local server that fails on every request still receives one remote attempt per cooldown window. The increment and the reset take a queue slot each, because scoring is awaitable and two sessions can score concurrently in one process.
+
+The fallback stays error-only. A weak, low-confidence, or wrong-but-valid local answer is never replaced by a hosted one, and the breaker cannot detect a valid yet incorrect local judgment; it only bounds repeated remote egress after local errors.
+
+### Quality evidence for the local route
+
+The DOGA fork's matched 100-question, three-mode evaluation of the same local classifier is the headline quality evidence for it, and it is that fork's report against authored labels rather than a measurement re-run here: Laya local agreed with the labels on goal 56/100, mode 41/100, stakes 37/100, scenario need 59/100 and high-versus-low ambiguity 67/100, while Jev through the API agreed on 88, 68, 67, 70 and 87. Laya detected none of the 30 authored high-ambiguity labels at the existing 0.7 threshold, and no threshold was tuned on that set. That is a reason to keep the hosted route as the default ranking path, and it is not a final-answer quality study.
+
 ## Storage and tools
 
 `LcmStore` owns raw rows, FTS indexing, summary nodes, edges, source links, hints, and committed or aborted node status. Raw identities are unique per session and immutable. `lcm_grep`, `lcm_expand`, and `lcm_nodes` are session-scoped tools. The current grep surface uses exact quoted FTS matching and returns at most 100 rows.
@@ -79,7 +99,7 @@ Endpoint validation decodes paths, rejects queries, fragments, credentials, unsa
 
 ## Metrics
 
-`jev_stats` includes candidate, keep, anchor, unscored, call, fallback, provider, threshold, LCM node, text-floor, freed-per-compaction, and unevaluated recall fields. `jev_calibrate` reports the live threshold, whether calibration is active, and how many samples the rolling window holds; with `dry_run` it sends one synthetic probe per provider in the configured route, so a `laya_then_hosted` profile probes the local hop and the keyed hosted hops in that order, and returns latency and status for each, including `error` with the missing environment-variable name when a provider has no key. `jev_providers` reports the configured mode, the real provider order, environment-variable names present, cooldowns, errors, and the provider that last answered; key values are never printed. `jev_scores` and `jev_anchors` expose candidate diagnostics. Three consecutive cycles below 20% freed space emit a warning in the metrics implementation.
+`jev_stats` includes candidate, keep, anchor, unscored, call, fallback, provider, threshold, LCM node, text-floor, freed-per-compaction, and unevaluated recall fields. `jev_calibrate` reports the live threshold, whether calibration is active, and how many samples the rolling window holds; with `dry_run` it sends one synthetic probe per provider in the configured route, so a `laya_then_hosted` profile probes the local hop and the keyed hosted hops in that order, and returns latency and status for each, including `error` with the missing environment-variable name when a provider has no key. `jev_providers` reports the configured mode, the real provider order, environment-variable names present, cooldowns, errors, and the provider that last answered; key values are never printed. `jev_scores` and `jev_anchors` expose candidate diagnostics. Three consecutive cycles below 20% freed space emit a warning in the metrics implementation. A suppressed local fallback emits one `laya_fallback_suppressed` warning carrying the count, the limit, and the failure category. Nothing on the scoring path logs a request, a state, candidate text, or an answer: the fallback line carries two provider names and a canonical category, and the per-compaction metrics dump carries numbers, booleans, thresholds, and provider names only.
 
 ## Sources and lineage
 

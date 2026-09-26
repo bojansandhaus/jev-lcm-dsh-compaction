@@ -1,5 +1,20 @@
+export type JevMode = 'auto' | 'typesafe' | 'openrouter' | 'laya' | 'laya_then_hosted';
+/**
+ * The DOGA v1.3.0 mode names, accepted as aliases for the two values this
+ * package already ships. `settings()` resolves them to the canonical value, so
+ * an alias never reaches a provider chain, a diagnostic, or a log.
+ */
+export const MODE_ALIASES:Record<string,JevMode>={laya_local:'laya',laya_with_jev_fallback:'laya_then_hosted'};
+export const MODES:JevMode[]=['auto','typesafe','openrouter','laya','laya_then_hosted'];
+export type ModeInput=JevMode|'laya_local'|'laya_with_jev_fallback';
+/** Canonical mode for a configured value, or undefined when nothing accepts it. */
+export function resolveMode(value:unknown):JevMode|undefined {
+  const name=typeof value==='string'?value.trim().toLowerCase():'';
+  const canonical=MODE_ALIASES[name]??name;
+  return (MODES as string[]).includes(canonical)?canonical as JevMode:undefined;
+}
 export interface Settings {
-  jev_provider: 'auto' | 'typesafe' | 'openrouter' | 'laya' | 'laya_then_hosted';
+  jev_provider: JevMode;
   typesafe_base_url: string; openrouter_base_url: string;
   openrouter_endpoint_path: string;
   jev_endpoint_path: string; jev_model: string; openrouter_model: string;
@@ -41,9 +56,12 @@ export function endpoint(base:string,path:string):string {
   if (u.protocol==='http:' && !['localhost','127.0.0.1','[::1]'].includes(u.hostname)) throw new Error('nonlocal provider requires HTTPS');
   return base.replace(/\/$/,'')+path;
 }
-export function settings(input:Partial<Settings>={}):Settings {
-  const s={...defaults,...input};
-  if (!['auto','typesafe','openrouter','laya','laya_then_hosted'].includes(s.jev_provider)) throw new Error('invalid jev_provider');
+/** Accepted configuration shape: the canonical modes plus the DOGA mode aliases. */
+export type SettingsInput=Partial<Omit<Settings,'jev_provider'>> & {jev_provider?:ModeInput};
+export function settings(input:SettingsInput={}):Settings {
+  const provider=resolveMode(input.jev_provider??defaults.jev_provider);
+  if (!provider) throw new Error('invalid jev_provider: expected auto, typesafe, openrouter, laya, or laya_then_hosted, where laya_local aliases laya and laya_with_jev_fallback aliases laya_then_hosted');
+  const s:Settings={...defaults,...input,jev_provider:provider};
   if (!s.jev_fallback_order.length || new Set(s.jev_fallback_order).size!==s.jev_fallback_order.length || s.jev_fallback_order.some(p=>!['typesafe','openrouter'].includes(p))) throw new Error('invalid provider order');
   for (const v of [s.keep_threshold,s.keep_threshold_max,s.min_keep_rate,s.jev_urgent_context_ratio]) if (!Number.isFinite(v) || v<0 || v>1) throw new Error('invalid probability');
   for (const v of [s.jev_calibration_window,s.jev_calibration_min_samples,s.jev_batch_window_turns,s.jev_max_candidates_per_batch,s.max_state_tokens,s.max_request_tokens,s.hint_budget_tokens]) if (!Number.isInteger(v) || v<1) throw new Error('invalid budget');

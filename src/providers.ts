@@ -1,5 +1,6 @@
 import { Settings, ProviderName, endpoint } from './settings.js';
 import { Transport, Questions, Scores, post, parseAnswers, ProviderError } from './jev-client.js';
+import { LAYA_FALLBACK_FAILURE_LIMIT,layaFailureCount,noteLayaFailure,noteLayaSuccess } from './laya-breaker.js';
 export const ENV={typesafe:'TYPESAFE_API_KEY',openrouter:'OPENROUTER_API_KEY',laya:'LAYA_API_KEY'};
 export interface JevProvider { name:ProviderName; url:string; model:string; payload?(state:unknown,questions:Questions):unknown; normalize?(response:unknown):unknown; }
 export const NATIVE_DECISIONS_PATH='/alpha/decisions';
@@ -52,6 +53,12 @@ export class OpenRouterProvider implements JevProvider {
  * attempt that fails with a configured trigger re-sends the same state to the
  * hosted API. That is the point of the mode, and it is why the mode is not
  * reachable through `auto` and why it loads only when a hosted key exists.
+ *
+ * Repeated local failures are bounded: the third consecutive one still
+ * attempts the hosted hop, and every further one until a local success
+ * suppresses the remote leg and re-raises the local error instead. The count
+ * lives in `laya-breaker.ts`, is per process, and is cleared only by a
+ * successful local answer.
  */
 export class LayaProvider implements JevProvider {
   name='laya' as const;url:string;model:string;
@@ -129,9 +136,18 @@ export class ProviderChain {
       const attempts=index+1<available.length?1:1+this.config.jev_fallback_max_retries;
       for(let attempt=0;attempt<attempts;attempt+=1){
         this.calls+=1;const p=this.providers[name];
-        try{const body=p.payload?p.payload(state,questions):{model:p.model,state,questions};const raw=await this.transport(p.url,this.keys[name],body,this.config.request_timeout_s);const result=parseAnswers(p.normalize?p.normalize(raw):raw,Object.keys(questions));this.last_provider=name;delete this.errors[name];return result;}
+        try{const body=p.payload?p.payload(state,questions):{model:p.model,state,questions};const raw=await this.transport(p.url,this.keys[name],body,this.config.request_timeout_s);const result=parseAnswers(p.normalize?p.normalize(raw):raw,Object.keys(questions));this.last_provider=name;delete this.errors[name];if(name==='laya')await noteLayaSuccess();return result;}
         catch(error){last=error instanceof ProviderError?error:new ProviderError('transport_error');}
         this.errors[name]=last.reason;if(!this.config.jev_fallback_on.includes(last.reason))throw last;
+      }
+      // The local hop is the only provider this breaker covers, and an order of
+      // one has no hosted leg to protect, so neither a standalone `laya`
+      // profile nor a collapsed chain spends breaker budget. A failure that is
+      // not a configured trigger has already thrown above and never reached a
+      // hosted URL, so it does not count either.
+      if(name==='laya'&&this.order.length>1&&!(await noteLayaFailure())){
+        this.log(`laya_fallback_suppressed count=${layaFailureCount()} limit=${LAYA_FALLBACK_FAILURE_LIMIT} reason=${last.reason}`);
+        throw last;
       }
       this.cooldowns[name]=this.clock()+this.config.jev_fallback_cooldown_s;previous=name;
     }

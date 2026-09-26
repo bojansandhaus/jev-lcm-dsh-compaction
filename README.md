@@ -129,7 +129,7 @@ The bundle schema in `src/index.ts` currently exposes these DSH-level values:
 | `auto` | `true` | Enable automatic engine behavior. |
 | `jev` | host-supplied value | Jev engine configuration passed to the implementation. |
 
-The engine defaults in `src/settings.ts` include `jev_provider: auto`, TypeSafe base `https://api.typesafe.ai/v1`, OpenRouter base `https://openrouter.ai/api`, TypeSafe path `/systemone`, OpenRouter model `~typesafe/jev-latest`, Laya base `http://127.0.0.1:8000` with path `/v1/systemone`, a `0.15` fallback threshold, a `0.40` threshold cap, a `0.10` minimum keep rate, a 500-sample calibration window, a 50-sample calibration minimum, a three-turn batch window, a 300-candidate batch cap, a 25,000-token state cap, and a 30,000-token request cap. See [`docs/reference.md`](docs/reference.md) for the complete table and validation rules.
+The engine defaults in `src/settings.ts` include `jev_provider: auto`, TypeSafe base `https://api.typesafe.ai/v1`, OpenRouter base `https://openrouter.ai/api`, TypeSafe path `/systemone`, OpenRouter model `~typesafe/jev-latest`, Laya base `http://127.0.0.1:8000` with path `/v1/systemone`, a `0.15` fallback threshold, a `0.40` threshold cap, a `0.10` minimum keep rate, a 500-sample calibration window, a 50-sample calibration minimum, a three-turn batch window, a 300-candidate batch cap, a 25,000-token state cap, and a 30,000-token request cap. `jev_provider` also accepts the DOGA fork's `laya_local` and `laya_with_jev_fallback` as aliases for `laya` and `laya_then_hosted`, resolved to the canonical value at configuration time. See [`docs/reference.md`](docs/reference.md) for the complete table and validation rules.
 
 Provider environment variables are:
 
@@ -139,10 +139,12 @@ export TYPESAFE_API_KEY='set-through-your-secret-manager'
 export OPENROUTER_API_KEY='set-through-your-secret-manager'
 # with both keys, leave jev_provider at auto for fallback
 # or run locally with no key: start laya-serve and set jev_provider to laya
+#   (the DOGA fork's name for this mode is laya_local)
 # or lead with the local server and fall back to a hosted key:
-#   jev_provider: laya_then_hosted
+#   jev_provider: laya_then_hosted   # DOGA fork name: laya_with_jev_fallback
 #   (needs at least one hosted key; a failed local attempt then sends the
-#    state to that hosted API)
+#    state to that hosted API, and three consecutive local failures suppress
+#    the remote leg until a local call succeeds)
 ```
 
 Do not put real credentials in a profile file, patch, issue, test fixture, or log. The example values above are placeholders, not credentials.
@@ -164,7 +166,7 @@ The exact DSH command used to invoke a tool depends on the host CLI. The source 
 
 ## What does observability show?
 
-`jev_stats` can expose candidate totals, keep counts, anchor counts, unscored counts, Jev calls, fallback counts, current and calibrated thresholds, the last provider, LCM node counts, text-floor estimates, freed-per-compaction, and the unevaluated recall field. `jev_providers` reports provider order and names of present environment variables, never key values. Three consecutive compactions below 20 percent freed space produce a warning in the metrics implementation.
+`jev_stats` can expose candidate totals, keep counts, anchor counts, unscored counts, Jev calls, fallback counts, current and calibrated thresholds, the last provider, LCM node counts, text-floor estimates, freed-per-compaction, and the unevaluated recall field. `jev_providers` reports provider order and names of present environment variables, never key values. Three consecutive compactions below 20 percent freed space produce a warning in the metrics implementation, and a suppressed local fallback produces one `laya_fallback_suppressed` warning with the count, the limit, and the failure category. No log line on the scoring path carries a request, a state, candidate text, or an answer.
 
 The local tests cover deterministic calibration, provider fallback, exact spans, overflow handling, concurrency, and Cordis loader composition. They do not verify fresh installation, live provider quality, real billing, production latency, sustained sessions, or comparative recall.
 
@@ -258,6 +260,16 @@ Yes, as an explicit opt-in: set `jev_provider: laya_then_hosted` and the chain i
 ```
 
 `jev_providers` reports the resulting order and the provider that answered, and `jev_calibrate` with `dry_run` probes the local hop and the keyed hosted hops in that order. The hosted leg is covered by unit tests with a synthetic transport only: no hosted key was available in this checkout, and a real hosted call without a key returns `401` or `403`, which is itself a fallback trigger rather than an answer.
+
+**Repeated local failures are bounded.** Three consecutive local failures still try the hosted hop. Every further failure until a local success suppresses the hosted leg, logs `laya_fallback_suppressed count=<n> limit=3 reason=<category>`, and re-raises the local error instead of answering remotely, so a server that is down stops turning every request into remote traffic. A successful local answer clears the count, and the count is per process: restarting the engine forgets it. That is what the per-provider cooldown cannot do, because a cooldown is a per-chain timer that expires by itself and still allows one remote attempt per window. Only a failure the mode would have fallen back on spends counter budget, so a standalone `laya` profile, a chain collapsed with `jev_fallback_enabled: false`, and a `malformed` local answer that is not a configured trigger all leave the count at zero.
+
+**The fallback is error-only.** A weak, low-confidence, or wrong-but-valid local answer is never replaced by a hosted one, and this breaker cannot detect a valid yet incorrect local judgment; it only bounds repeated remote egress after local errors.
+
+**Quality evidence for the local route.** The DOGA fork's matched 100-question, three-mode evaluation of the same local classifier is the headline evidence, and it is that fork's report against authored labels, not a measurement re-run here: Laya local agreed with the labels on goal 56/100, mode 41/100, stakes 37/100, scenario need 59/100 and high-versus-low ambiguity 67/100, while Jev through the API agreed on 88, 68, 67, 70 and 87, and Laya detected none of the 30 authored high-ambiguity labels at the existing 0.7 threshold. Keep the hosted route as the default ranking path until Laya's questions and checkpoint are validated on new labels.
+
+### What do the DOGA mode names mean here?
+
+The DOGA fork names exactly three decision modes, and this package accepts two of those names as aliases for values it already ships, resolved in `settings()` before anything else reads the configuration: `laya_local` for `laya`, and `laya_with_jev_fallback` for `laya_then_hosted`. Every existing value still resolves, and anything else is rejected with `invalid jev_provider: expected auto, typesafe, openrouter, laya, or laya_then_hosted, where laya_local aliases laya and laya_with_jev_fallback aliases laya_then_hosted`. DOGA's third name, `jev_api`, is not an alias here: this package splits the hosted arrangement into `auto`, `typesafe`, and `openrouter`. The alias never appears in `jev_providers` or in a log; the canonical value is always reported.
 
 ### What happens if TypeSafe is rate-limited?
 
