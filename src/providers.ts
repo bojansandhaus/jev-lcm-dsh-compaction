@@ -1,6 +1,6 @@
 import { Settings, ProviderName, endpoint } from './settings.js';
 import { Transport, Questions, Scores, post, parseAnswers, ProviderError } from './jev-client.js';
-export const ENV={typesafe:'TYPESAFE_API_KEY',openrouter:'OPENROUTER_API_KEY'};
+export const ENV={typesafe:'TYPESAFE_API_KEY',openrouter:'OPENROUTER_API_KEY',laya:'LAYA_API_KEY'};
 export interface JevProvider { name:ProviderName; url:string; model:string; payload?(state:unknown,questions:Questions):unknown; normalize?(response:unknown):unknown; }
 export const NATIVE_DECISIONS_PATH='/alpha/decisions';
 const CHAT_INSTRUCTIONS='You are a retention scorer. For every question id you are given, answer with the probability between 0 and 1 that the answer to that question is yes, judging only from the state you receive. Reply with JSON only, shaped exactly as {"answers": {"<question id>": {"noul": <number>}}}. Add no commentary.';
@@ -38,12 +38,28 @@ export class OpenRouterProvider implements JevProvider {
   normalize(response:unknown):unknown{return this.chat_surface?decisionsAnswers(response):response;}
 }
 /**
- * One synthetic probe per configured provider, for the jev_calibrate dry run.
- * Reports latency and status for each provider without touching session data.
+ * A Laya server on loopback, answering the Decisions contract.
+ *
+ * Laya is not a hosted Jev endpoint. It is a separate local model that speaks
+ * the same /v1/systemone shape, so it replaces the hosted pair for a profile
+ * rather than joining the fallback chain. The route is keyless: no credential is
+ * required, and LAYA_API_KEY is sent only when the server was started with its
+ * own bearer check.
+ */
+export class LayaProvider implements JevProvider {
+  name='laya' as const;url:string;model:string;
+  constructor(s:Settings){this.url=endpoint(s.laya_base_url,s.laya_endpoint_path);this.model=s.laya_model;}
+}
+/**
+ * One synthetic probe per provider in the configured route, for the
+ * jev_calibrate dry run. Reports latency and status without touching session
+ * data. A local route probes only the local server, since it replaces the
+ * hosted pair.
  */
 export async function probeProviders(config:Settings,env:Record<string,string|undefined>=process.env,transport?:Transport,clock?:()=>number,log?:(s:string)=>void){
   const probes:{provider:ProviderName;status:string;ms:number;scores?:Scores;reason?:string}[]=[];
-  for(const provider of ['typesafe','openrouter'] as const){
+  const names:ProviderName[]=config.jev_provider==='laya'?['laya']:['typesafe','openrouter'];
+  for(const provider of names){
     const started=performance.now();
     try{
       const probe=new ProviderChain({...config,jev_provider:provider,jev_fallback_enabled:false},env,transport,clock,log);
@@ -59,11 +75,21 @@ export class ProviderChain {
   order:ProviderName[];private keys:Record<ProviderName,string>;providers:Record<ProviderName,JevProvider>;
   cooldowns:Partial<Record<ProviderName,number>>={};errors:Partial<Record<ProviderName,string>>={};last_provider='';fallback_count=0;calls=0;
   constructor(readonly config:Settings,env:Record<string,string|undefined>=process.env,public transport:Transport=post,readonly clock=()=>performance.now()/1000,readonly log:(s:string)=>void=()=>{}){
-    this.keys={typesafe:env.TYPESAFE_API_KEY?.trim()??'',openrouter:env.OPENROUTER_API_KEY?.trim()??''};
-    if(config.jev_provider!=='auto'&&!this.keys[config.jev_provider])throw new Error('missing '+ENV[config.jev_provider]);
-    this.order=(config.jev_provider==='auto'?config.jev_fallback_order:[config.jev_provider]).filter(p=>this.keys[p]);
+    this.keys={typesafe:env.TYPESAFE_API_KEY?.trim()??'',openrouter:env.OPENROUTER_API_KEY?.trim()??'',laya:env.LAYA_API_KEY?.trim()??''};
+    if(config.jev_provider==='laya'){
+      // Local mode replaces the hosted pair: one provider, no credential, and
+      // no chain to fall through.
+      this.order=['laya'];
+    }else if(config.jev_provider==='auto'){
+      // The hosted chain contains only providers with a usable key. The keyless
+      // local route is never selected on its own initiative.
+      this.order=config.jev_fallback_order.filter(p=>this.keys[p]);
+    }else{
+      if(!this.keys[config.jev_provider])throw new Error('missing '+ENV[config.jev_provider]);
+      this.order=[config.jev_provider];
+    }
     if(!config.jev_fallback_enabled)this.order=this.order.slice(0,1);
-    this.providers={typesafe:new TypeSafeProvider(config),openrouter:new OpenRouterProvider(config)};
+    this.providers={typesafe:new TypeSafeProvider(config),openrouter:new OpenRouterProvider(config),laya:new LayaProvider(config)};
   }
   diagnostics(){return {order:this.order,keys_present:(Object.keys(ENV) as ProviderName[]).filter(p=>this.keys[p]).map(p=>ENV[p]),cooldown_seconds:Object.fromEntries(Object.entries(this.cooldowns).map(([p,t])=>[p,Math.max(0,t-this.clock())])),last_errors:this.errors,last_provider:this.last_provider};}
   async score(state:unknown,questions:Questions):Promise<Scores>{

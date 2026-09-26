@@ -19,17 +19,21 @@ The TypeScript defaults in `src/settings.ts` and the bundle defaults in `src/ind
 | `retainRatio` | `0.16` | Bundle retention ratio. |
 | `maxTokens` | `8192` | Engine context budget. |
 | `auto` | `true` | Enable automatic compaction behavior. |
-| `jev_provider` | `auto` | TypeSafe, OpenRouter, or automatic resolution. |
+| `jev_provider` | `auto` | `auto`, `typesafe`, `openrouter`, or `laya` for a local server. |
 | `TYPESAFE_API_KEY` | unset | TypeSafe credential. |
 | `OPENROUTER_API_KEY` | unset | OpenRouter credential. |
+| `LAYA_API_KEY` | unset | Optional bearer for a local `laya-serve` started with `LAYA_API_KEY`. The local route needs no credential. |
 | `typesafe_base_url` | `https://api.typesafe.ai/v1` | TypeSafe base. |
 | `openrouter_base_url` | `https://openrouter.ai/api` | OpenRouter base. |
 | `openrouter_endpoint_path` | `/alpha/decisions` | OpenRouter surface. The native Decisions path, or any other path to select the chat completions adapter. |
 | `jev_endpoint_path` | `/systemone` | TypeSafe path. |
 | `jev_model` | `jev-latest` | TypeSafe model. |
 | `openrouter_model` | `~typesafe/jev-latest` | Current OpenRouter adapter model. |
+| `laya_base_url` | `http://127.0.0.1:8000` | Local `laya-serve` base. Plain HTTP is accepted for loopback only. |
+| `laya_endpoint_path` | `/v1/systemone` | Local path, the route the Decisions contract uses. |
+| `laya_model` | `convaiinnovations/laya` | Laya checkpoint. `english`, `multilingual`, or `typed-decisions` name one directly; any other value routes by script and language. |
 | `jev_fallback_enabled` | `true` | Allow fallback. |
-| `jev_fallback_order` | `typesafe, openrouter` | Provider order. |
+| `jev_fallback_order` | `typesafe, openrouter` | Order inside the hosted pair. Only `typesafe` and `openrouter` are accepted, because the local route replaces the pair rather than joining it. |
 | `jev_fallback_on` | transport, timeout, 401, 403, 429, 5xx | Fallback triggers. |
 | `jev_fallback_cooldown_s` | `60` | Provider cooldown. |
 | `jev_fallback_max_retries` | `1` | Retry count. |

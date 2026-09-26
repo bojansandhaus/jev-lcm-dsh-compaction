@@ -35,6 +35,28 @@ Tamara Tran contributed the upstream state-shaping and two-question scoring desi
 
 The project uses the MIT license. See [third party notices](THIRD_PARTY_NOTICES.md) for licenses and specific reuse.
 
+## [1.0.0-rc.2] - 2026-09-22
+
+Adds a local route for Jev scoring: instead of calling TypeSafe or OpenRouter with a key, point the engine at a Laya server on your own machine. The hosted pair remains the default and an existing configuration keeps behaving exactly as before.
+
+### Added
+
+- `laya` as a `jev_provider` value that replaces the hosted pair for that profile. Laya is a separate local model, and `laya-serve` publishes `/v1/systemone` in the same Decisions contract as TypeSafe, so the request and response path are shared with the hosted route.
+- `laya_base_url`, `laya_endpoint_path`, and `laya_model`, defaulting to `http://127.0.0.1:8000`, `/v1/systemone`, and `convaiinnovations/laya`.
+- Keyless wire handling: `post` omits the `Authorization` header when no key is configured, and `LAYA_API_KEY` is forwarded only when the local server was started with its own bearer check.
+- `jev_calibrate` with `dry_run` now probes the configured route, so a local profile probes the local server rather than the hosted providers.
+- `tests/laya-provider.test.ts`, seven contracts: replacement ordering, keyless payload shape, the hosted chain never selecting the local route, fallback-order rejection, credential forwarding without leaking it, the header rule, and dry-run routing.
+
+### Measured against a live `laya-serve`, 2026-09-22, base English checkpoint, CPU
+
+- Keep and discard were not separated on the production retention questions: `0.6516` against `0.6502`, a gap of `0.0014`. Calibration then reported `0.40`, its ceiling, and all 16 answers were retained. The route fails safe by keeping evidence, and frees nothing until thresholds are recalibrated on labelled data or a retention-tuned checkpoint is used.
+- Those 16 question rows took `25.6s`, roughly `1.6s` each, beyond the default `request_timeout_s` of `30`.
+- `laya_base_url` defaults to `127.0.0.1:8000`, so another service bound to 8000 answers instead. A `404` carrying `{"detail": "Not Found"}` surfaces as `http_error`, which is not a fallback trigger.
+
+### Status
+
+Implementation, tests, and documentation are complete and pushed. Registry publication is unchanged from `1.0.0-rc.1`. Nothing in this release installs Laya or selects it by default.
+
 ## [1.0.0] - 2026-09-19 (prepared, unpublished)
 
 Jev-LCM Compaction Plugin for DeepSeek Harness: Jev ranks stale evidence before Lossless Context Management condenses conversation history.

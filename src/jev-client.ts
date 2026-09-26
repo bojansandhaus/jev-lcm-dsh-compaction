@@ -12,7 +12,11 @@ export function parseAnswers(data:unknown,names:string[]):Scores {
 }
 export const post:Transport=async(url,key,payload,timeout)=>{
   try {
-    const response=await fetch(url,{method:'POST',redirect:'error',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(timeout*1000)});
+    // A keyless provider bound to loopback carries no credential, so the header
+    // is omitted entirely rather than sent empty.
+    const headers:Record<string,string>={'Content-Type':'application/json'};
+    if(key)headers.Authorization='Bearer '+key;
+    const response=await fetch(url,{method:'POST',redirect:'error',headers,body:JSON.stringify(payload),signal:AbortSignal.timeout(timeout*1000)});
     if(!response.ok)throw new ProviderError([401,403,429].includes(response.status)?String(response.status):response.status>=500?'5xx':'http_error');
     const text=await response.text();if(text.length>2000000)throw new ProviderError('malformed');
     try{return JSON.parse(text);}catch{throw new ProviderError('malformed');}

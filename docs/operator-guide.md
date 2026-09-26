@@ -19,6 +19,8 @@ The exact repository and profile are operator choices. Back up the profile befor
 
 Set `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, or both in the DSH profile environment. Select the provider through the profile's plugin configuration. With `auto`, the configured order is TypeSafe then OpenRouter. A pinned provider with a missing key fails at load. No keys disables Jev scoring without intentionally deleting stored evidence.
 
+To run with no hosted service at all, set `jev_provider: laya` and start `laya-serve` on the machine. The local route needs no key, defines no fallback chain because it replaces the hosted pair, and takes `laya_base_url`, `laya_endpoint_path`, and `laya_model`. `jev_calibrate` with `dry_run` probes whichever route is configured, so a local route probes the local server only.
+
 Use a distinct `databasePath` per test profile. The patch defaults to `jev-lcm.sqlite` and creates parent directories with restricted permissions where applicable.
 
 ## Reset and migration

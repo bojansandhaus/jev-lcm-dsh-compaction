@@ -26,7 +26,7 @@ The numbers in the first column belong to the cited PR. They are not fresh measu
 - Leaves raw rows unchanged. The archive owns raw evidence; Jev never rewrites it.
 - Uses calibration rather than the rejected fixed `0.5` default.
 - Batches scoring and marks candidates beyond the state cap `jev_unscored`.
-- Accepts `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, or both, with automatic fallback in `auto` mode.
+- Accepts `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, or both, with automatic fallback in `auto` mode, or runs entirely locally against a Laya server with no key at all.
 - Exposes `lcm_grep`, `lcm_expand`, `lcm_nodes`, `jev_stats`, `jev_providers`, `jev_scores`, `jev_anchors`, and `jev_calibrate` as session-scoped tools.
 - Keeps ordinary host condensation available when Jev is disabled or fails.
 
@@ -129,7 +129,7 @@ The bundle schema in `src/index.ts` currently exposes these DSH-level values:
 | `auto` | `true` | Enable automatic engine behavior. |
 | `jev` | host-supplied value | Jev engine configuration passed to the implementation. |
 
-The engine defaults in `src/settings.ts` include `jev_provider: auto`, TypeSafe base `https://api.typesafe.ai/v1`, OpenRouter base `https://openrouter.ai/api`, TypeSafe path `/systemone`, OpenRouter model `~typesafe/jev-latest`, a `0.15` fallback threshold, a `0.40` threshold cap, a `0.10` minimum keep rate, a 500-sample calibration window, a 50-sample calibration minimum, a three-turn batch window, a 300-candidate batch cap, a 25,000-token state cap, and a 30,000-token request cap. See [`docs/reference.md`](docs/reference.md) for the complete table and validation rules.
+The engine defaults in `src/settings.ts` include `jev_provider: auto`, TypeSafe base `https://api.typesafe.ai/v1`, OpenRouter base `https://openrouter.ai/api`, TypeSafe path `/systemone`, OpenRouter model `~typesafe/jev-latest`, Laya base `http://127.0.0.1:8000` with path `/v1/systemone`, a `0.15` fallback threshold, a `0.40` threshold cap, a `0.10` minimum keep rate, a 500-sample calibration window, a 50-sample calibration minimum, a three-turn batch window, a 300-candidate batch cap, a 25,000-token state cap, and a 30,000-token request cap. See [`docs/reference.md`](docs/reference.md) for the complete table and validation rules.
 
 Provider environment variables are:
 
@@ -138,6 +138,7 @@ export TYPESAFE_API_KEY='set-through-your-secret-manager'
 # or:
 export OPENROUTER_API_KEY='set-through-your-secret-manager'
 # with both keys, leave jev_provider at auto for fallback
+# or run locally with no key: start laya-serve and set jev_provider to laya
 ```
 
 Do not put real credentials in a profile file, patch, issue, test fixture, or log. The example values above are placeholders, not credentials.
@@ -206,6 +207,33 @@ Yes. Set `OPENROUTER_API_KEY` and choose `jev_provider: openrouter`, or leave `a
 ### Can I use both keys at once?
 
 Yes. With `auto` and fallback enabled, the configured order selects the first available provider and can try the next provider on configured failures.
+
+### Can I run it locally with Laya instead of a hosted provider?
+Yes. You either point the plugin at TypeSafe or OpenRouter with a key, or you run Laya on your own machine with no key at all. Laya is not a hosted Jev endpoint; it is a separate local model, and the `laya-serve` server it ships publishes `POST /v1/systemone` in the same Decisions contract as TypeSafe, so the local route replaces the hosted pair for that profile rather than joining it.
+
+```sh
+python -m pip install laya
+laya-serve              # LAYA_HOST, LAYA_PORT, LAYA_DEVICE, LAYA_THREADS, LAYA_MODELS, LAYA_API_KEY
+```
+
+```yaml
+- id: jev-lcm-compaction
+  name: '@bojansandhaus/jev-lcm-dsh-compaction'
+  config:
+    jev:
+      jev_provider: laya
+      laya_base_url: http://127.0.0.1:8000
+      laya_model: english
+      request_timeout_s: 120
+```
+
+The defaults are `laya_base_url` `http://127.0.0.1:8000`, `laya_endpoint_path` `/v1/systemone`, and `laya_model` `convaiinnovations/laya`, which asks the server to choose a checkpoint from the script and language of the state; `english`, `multilingual`, and `typed-decisions` name one directly. `LAYA_API_KEY` is forwarded only when the server was started with its own bearer check, and `jev_fallback_order` accepts only `typesafe` and `openrouter`, because the local route is a replacement and not a chain member.
+
+Three measured limits come from a live run against `laya-serve` on 2026-09-22, base English checkpoint, CPU:
+
+- **Quality on these questions is not established.** Across four clearly-keep spans and four clearly-droppable spans, scored with the production retention questions, the keep group averaged `0.6516` and the drop group `0.6502`, a gap of `0.0014`. Calibration then set `0.40`, its `keep_threshold_max` cap, and all 16 answers were retained. The failure direction is safe: the local route keeps everything rather than dropping evidence, so compaction frees nothing until you recalibrate on your own data or use a checkpoint tuned for retention.
+- **Cost is per question row.** The same 16-question request took `25.6s`, about `1.6s` per row, which is past the default `request_timeout_s` of `30`. Raise `request_timeout_s` for a CPU-only server.
+- **The default port is shared ground.** `laya_base_url` points at `http://127.0.0.1:8000`, which many self-hosted services also claim. If something else already listens there, the plugin reaches that service and reports an error instead of a score; a `404` carrying `{"detail":"Not Found"}` is how that looks. Start the server with `LAYA_PORT=<port>` and set `laya_base_url` to that same port.
 
 ### What happens if TypeSafe is rate-limited?
 
