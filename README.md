@@ -26,7 +26,7 @@ The numbers in the first column belong to the cited PR. They are not fresh measu
 - Leaves raw rows unchanged. The archive owns raw evidence; Jev never rewrites it.
 - Uses calibration rather than the rejected fixed `0.5` default.
 - Batches scoring and marks candidates beyond the state cap `jev_unscored`.
-- Accepts `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, or both, with automatic fallback in `auto` mode, or runs entirely locally against a Laya server with no key at all.
+- Accepts `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, or both, with automatic fallback in `auto` mode, or runs entirely locally against a Laya server with no key at all, or, as an explicit opt-in, tries the local server first and keeps the hosted providers behind it as a fallback.
 - Exposes `lcm_grep`, `lcm_expand`, `lcm_nodes`, `jev_stats`, `jev_providers`, `jev_scores`, `jev_anchors`, and `jev_calibrate` as session-scoped tools.
 - Keeps ordinary host condensation available when Jev is disabled or fails.
 
@@ -139,6 +139,10 @@ export TYPESAFE_API_KEY='set-through-your-secret-manager'
 export OPENROUTER_API_KEY='set-through-your-secret-manager'
 # with both keys, leave jev_provider at auto for fallback
 # or run locally with no key: start laya-serve and set jev_provider to laya
+# or lead with the local server and fall back to a hosted key:
+#   jev_provider: laya_then_hosted
+#   (needs at least one hosted key; a failed local attempt then sends the
+#    state to that hosted API)
 ```
 
 Do not put real credentials in a profile file, patch, issue, test fixture, or log. The example values above are placeholders, not credentials.
@@ -234,6 +238,26 @@ Three measured limits come from a live run against `laya-serve` on 2026-09-22, b
 - **Quality on these questions is not established.** Across four clearly-keep spans and four clearly-droppable spans, scored with the production retention questions, the keep group averaged `0.6516` and the drop group `0.6502`, a gap of `0.0014`. Calibration then set `0.40`, its `keep_threshold_max` cap, and all 16 answers were retained. The failure direction is safe: the local route keeps everything rather than dropping evidence, so compaction frees nothing until you recalibrate on your own data or use a checkpoint tuned for retention.
 - **Cost is per question row.** The same 16-question request took `25.6s`, about `1.6s` per row, which is past the default `request_timeout_s` of `30`. Raise `request_timeout_s` for a CPU-only server.
 - **The default port is shared ground.** `laya_base_url` points at `http://127.0.0.1:8000`, which many self-hosted services also claim. If something else already listens there, the plugin reaches that service and reports an error instead of a score; a `404` carrying `{"detail":"Not Found"}` is how that looks. Start the server with `LAYA_PORT=<port>` and set `laya_base_url` to that same port.
+
+### Can I run the local server first with a hosted provider as a fallback?
+
+Yes, as an explicit opt-in: set `jev_provider: laya_then_hosted` and the chain is the local Laya server first, then the hosted providers from `jev_fallback_order` that have a key, so `['laya', 'typesafe', 'openrouter']` with both keys and `['laya', 'typesafe']` with only TypeSafe. The usual triggers, cooldown, and retries apply unchanged, so a `transport_error`, timeout, `401`, `403`, `429`, or `5xx` from the local server falls through to the hosted hop. The mode loads only when at least one hosted key exists; with neither key it fails at load and names the missing variables, because the mode promises a fallback that cannot exist. Plain `laya` is untouched by this mode: still one provider, still no fallback.
+
+**Privacy consequence.** In plain `laya` mode the state never leaves the machine. In `laya_then_hosted` it does, because a local attempt that fails with a configured trigger re-sends the same state to the hosted API. That is the point of the mode, and it is why the mode is opt-in. `auto` never selects the local route, and `laya_then_hosted` is the only mode in which the local server leads a chain; `jev_fallback_order` still rejects `laya` as a member.
+
+```yaml
+- id: jev-lcm-compaction
+  name: '@bojansandhaus/jev-lcm-dsh-compaction'
+  config:
+    jev:
+      jev_provider: laya_then_hosted
+      laya_base_url: http://127.0.0.1:8123
+      laya_model: english
+      request_timeout_s: 120
+      # TYPESAFE_API_KEY and/or OPENROUTER_API_KEY come from the profile environment
+```
+
+`jev_providers` reports the resulting order and the provider that answered, and `jev_calibrate` with `dry_run` probes the local hop and the keyed hosted hops in that order. The hosted leg is covered by unit tests with a synthetic transport only: no hosted key was available in this checkout, and a real hosted call without a key returns `401` or `403`, which is itself a fallback trigger rather than an answer.
 
 ### What happens if TypeSafe is rate-limited?
 

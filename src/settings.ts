@@ -1,5 +1,5 @@
 export interface Settings {
-  jev_provider: 'auto' | 'typesafe' | 'openrouter' | 'laya';
+  jev_provider: 'auto' | 'typesafe' | 'openrouter' | 'laya' | 'laya_then_hosted';
   typesafe_base_url: string; openrouter_base_url: string;
   openrouter_endpoint_path: string;
   jev_endpoint_path: string; jev_model: string; openrouter_model: string;
@@ -43,7 +43,7 @@ export function endpoint(base:string,path:string):string {
 }
 export function settings(input:Partial<Settings>={}):Settings {
   const s={...defaults,...input};
-  if (!['auto','typesafe','openrouter','laya'].includes(s.jev_provider)) throw new Error('invalid jev_provider');
+  if (!['auto','typesafe','openrouter','laya','laya_then_hosted'].includes(s.jev_provider)) throw new Error('invalid jev_provider');
   if (!s.jev_fallback_order.length || new Set(s.jev_fallback_order).size!==s.jev_fallback_order.length || s.jev_fallback_order.some(p=>!['typesafe','openrouter'].includes(p))) throw new Error('invalid provider order');
   for (const v of [s.keep_threshold,s.keep_threshold_max,s.min_keep_rate,s.jev_urgent_context_ratio]) if (!Number.isFinite(v) || v<0 || v>1) throw new Error('invalid probability');
   for (const v of [s.jev_calibration_window,s.jev_calibration_min_samples,s.jev_batch_window_turns,s.jev_max_candidates_per_batch,s.max_state_tokens,s.max_request_tokens,s.hint_budget_tokens]) if (!Number.isInteger(v) || v<1) throw new Error('invalid budget');

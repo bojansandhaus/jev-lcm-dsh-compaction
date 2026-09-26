@@ -35,6 +35,35 @@ Tamara Tran contributed the upstream state-shaping and two-question scoring desi
 
 The project uses the MIT license. See [third party notices](THIRD_PARTY_NOTICES.md) for licenses and specific reuse.
 
+## [1.0.0-rc.3] - 2026-09-26
+
+Adds the third provider route: the local Laya server first with the hosted Jev providers behind it, as an explicit opt-in. The default and the existing local route are unchanged.
+
+### Added
+
+- `laya_then_hosted` as a `jev_provider` value. The order is the local server followed by the members of `jev_fallback_order` that have a key, so `['laya','typesafe','openrouter']` with both keys and `['laya','typesafe']` with only TypeSafe. The configured triggers, cooldown, and retries apply unchanged, so a local `transport_error`, timeout, `401`, `403`, `429`, or `5xx` falls through to the hosted hop.
+- A load-time error naming the missing environment variables when the mode is selected with no hosted key at all, because the mode promises a fallback that cannot exist.
+- `mode` in the `jev_providers` diagnostics, and a `dry_run` probe that follows the real order of this mode instead of the generic hosted pair.
+- `tests/laya-then-hosted.test.ts`, ten contracts: order construction with both keys, with one key, with a reordered `jev_fallback_order`, and without any key; local success using the local hop; fallthrough for every configured trigger class; `fallback_count`, `last_provider`, error and cooldown bookkeeping; walking past both hosted providers with the retry on the last one; standalone `laya` unchanged; `auto` still excluding the local route; the order validator still rejecting `laya`; fallback disabled collapsing to the local hop; and the dry-run order.
+
+### Privacy
+
+In this mode a failed local attempt sends the state to a hosted API. That is the point of the mode. Plain `laya` never leaves the machine. Both statements sit beside each other in the README FAQ, [docs/reference.md](docs/reference.md), [docs/integrations.md](docs/integrations.md) and [docs/operator-guide.md](docs/operator-guide.md).
+
+### Live evidence, 2026-09-26
+
+- With a `laya-serve` process on `127.0.0.1:8123` (base English checkpoint, CPU), the mode built `['laya','typesafe','openrouter']` and the local hop answered in `543 ms` with `0.1612` for the probe question, `calls=1`, `fallback_count=0`, `last_provider=laya`.
+- With the local base repointed at a dead port, the real transport walked the whole route: `laya` `transport_error`, then `401` from both hosted providers because no hosted key exists on this machine, `calls=4`, `fallback_count=2`. The hosted leg returning an answer is covered by unit tests with an injected synthetic transport only.
+
+### Unchanged
+
+- `auto` never selects the local route, `laya` stays a single-provider route with no fallback, and `jev_fallback_order` still rejects `laya`.
+- Key values are never printed; diagnostics report variable names only.
+
+### Status
+
+Implementation, tests, and documentation are complete and pushed: 54 tests, source and test typecheck, and a clean build. Registry publication is unchanged from `1.0.0-rc.2`. Nothing in this release selects the new mode by default.
+
 ## [1.0.0-rc.2] - 2026-09-22
 
 Adds a local route for Jev scoring: instead of calling TypeSafe or OpenRouter with a key, point the engine at a Laya server on your own machine. The hosted pair remains the default and an existing configuration keeps behaving exactly as before.

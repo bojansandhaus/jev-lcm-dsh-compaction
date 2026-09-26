@@ -41,14 +41,33 @@ export class OpenRouterProvider implements JevProvider {
  * A Laya server on loopback, answering the Decisions contract.
  *
  * Laya is not a hosted Jev endpoint. It is a separate local model that speaks
- * the same /v1/systemone shape, so it replaces the hosted pair for a profile
- * rather than joining the fallback chain. The route is keyless: no credential is
- * required, and LAYA_API_KEY is sent only when the server was started with its
- * own bearer check.
+ * the same /v1/systemone shape, so under `laya` it replaces the hosted pair for
+ * a profile rather than joining the fallback chain. That route is keyless: no
+ * credential is required, and LAYA_API_KEY is sent only when the server was
+ * started with its own bearer check.
+ *
+ * `laya_then_hosted` is the explicit opt-in that does put the local hop inside
+ * a chain, with the hosted providers after it. Privacy consequence: the plain
+ * `laya` route never leaves the machine, and this one does, because a local
+ * attempt that fails with a configured trigger re-sends the same state to the
+ * hosted API. That is the point of the mode, and it is why the mode is not
+ * reachable through `auto` and why it loads only when a hosted key exists.
  */
 export class LayaProvider implements JevProvider {
   name='laya' as const;url:string;model:string;
   constructor(s:Settings){this.url=endpoint(s.laya_base_url,s.laya_endpoint_path);this.model=s.laya_model;}
+}
+/**
+ * The order a dry run probes: the local route alone for `laya`, the local hop
+ * followed by the hosted members a key exists for in `laya_then_hosted`, and
+ * the full hosted pair otherwise so a missing key still reports its variable
+ * name.
+ */
+export function routeNames(config:Settings,env:Record<string,string|undefined>):ProviderName[] {
+  if(config.jev_provider==='laya')return ['laya'];
+  const hosted=config.jev_fallback_order.filter(p=>Boolean(env[ENV[p]]?.trim()));
+  if(config.jev_provider==='laya_then_hosted')return ['laya',...(hosted.length?hosted:config.jev_fallback_order)];
+  return ['typesafe','openrouter'];
 }
 /**
  * One synthetic probe per provider in the configured route, for the
@@ -58,7 +77,7 @@ export class LayaProvider implements JevProvider {
  */
 export async function probeProviders(config:Settings,env:Record<string,string|undefined>=process.env,transport?:Transport,clock?:()=>number,log?:(s:string)=>void){
   const probes:{provider:ProviderName;status:string;ms:number;scores?:Scores;reason?:string}[]=[];
-  const names:ProviderName[]=config.jev_provider==='laya'?['laya']:['typesafe','openrouter'];
+  const names=routeNames(config,env);
   for(const provider of names){
     const started=performance.now();
     try{
@@ -80,6 +99,14 @@ export class ProviderChain {
       // Local mode replaces the hosted pair: one provider, no credential, and
       // no chain to fall through.
       this.order=['laya'];
+    }else if(config.jev_provider==='laya_then_hosted'){
+      // Explicit opt-in chain: the local hop leads and the hosted providers it
+      // can authenticate against follow. The mode promises a fallback, so an
+      // order with no hosted member is a load error rather than a quiet
+      // local-only route.
+      const hosted=config.jev_fallback_order.filter(p=>this.keys[p]);
+      if(!hosted.length)throw new Error('missing '+config.jev_fallback_order.map(p=>ENV[p]).join(' and ')+' for jev_provider laya_then_hosted');
+      this.order=['laya',...hosted];
     }else if(config.jev_provider==='auto'){
       // The hosted chain contains only providers with a usable key. The keyless
       // local route is never selected on its own initiative.
@@ -91,7 +118,7 @@ export class ProviderChain {
     if(!config.jev_fallback_enabled)this.order=this.order.slice(0,1);
     this.providers={typesafe:new TypeSafeProvider(config),openrouter:new OpenRouterProvider(config),laya:new LayaProvider(config)};
   }
-  diagnostics(){return {order:this.order,keys_present:(Object.keys(ENV) as ProviderName[]).filter(p=>this.keys[p]).map(p=>ENV[p]),cooldown_seconds:Object.fromEntries(Object.entries(this.cooldowns).map(([p,t])=>[p,Math.max(0,t-this.clock())])),last_errors:this.errors,last_provider:this.last_provider};}
+  diagnostics(){return {mode:this.config.jev_provider,order:this.order,keys_present:(Object.keys(ENV) as ProviderName[]).filter(p=>this.keys[p]).map(p=>ENV[p]),cooldown_seconds:Object.fromEntries(Object.entries(this.cooldowns).map(([p,t])=>[p,Math.max(0,t-this.clock())])),last_errors:this.errors,last_provider:this.last_provider};}
   async score(state:unknown,questions:Questions):Promise<Scores>{
     if(!this.order.length)throw new ProviderError('disabled');
     const available=this.order.filter(p=>(this.cooldowns[p]??0)<=this.clock());

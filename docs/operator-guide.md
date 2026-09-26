@@ -21,6 +21,8 @@ Set `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, or both in the DSH profile environ
 
 To run with no hosted service at all, set `jev_provider: laya` and start `laya-serve` on the machine. The local route needs no key, defines no fallback chain because it replaces the hosted pair, and takes `laya_base_url`, `laya_endpoint_path`, and `laya_model`. `jev_calibrate` with `dry_run` probes whichever route is configured, so a local route probes the local server only.
 
+To lead with the local server and keep a hosted provider behind it, set `jev_provider: laya_then_hosted`. The chain is the local hop followed by the members of `jev_fallback_order` that have a key, and the usual triggers, cooldown, and retries apply, so a local transport error, timeout, `401`, `403`, `429`, or `5xx` falls through to the hosted hop. At least one hosted key must be present: with none, the provider chain fails at load and names the missing variables. **Privacy consequence:** in this mode a failed local attempt sends the state to the hosted API, unlike plain `laya`, which never leaves the machine. Use plain `laya` when the state must stay local. `auto` never selects the local route, and `jev_fallback_order` still rejects `laya`, so this mode is the only way the local server leads a chain. `jev_providers` reports the mode, the real order, and the provider that last answered.
+
 Use a distinct `databasePath` per test profile. The patch defaults to `jev-lcm.sqlite` and creates parent directories with restricted permissions where applicable.
 
 ## Reset and migration

@@ -19,7 +19,7 @@ The TypeScript defaults in `src/settings.ts` and the bundle defaults in `src/ind
 | `retainRatio` | `0.16` | Bundle retention ratio. |
 | `maxTokens` | `8192` | Engine context budget. |
 | `auto` | `true` | Enable automatic compaction behavior. |
-| `jev_provider` | `auto` | `auto`, `typesafe`, `openrouter`, or `laya` for a local server. |
+| `jev_provider` | `auto` | `auto`, `typesafe`, `openrouter`, `laya` for a local server, or `laya_then_hosted` for the local server first with the hosted providers behind it. |
 | `TYPESAFE_API_KEY` | unset | TypeSafe credential. |
 | `OPENROUTER_API_KEY` | unset | OpenRouter credential. |
 | `LAYA_API_KEY` | unset | Optional bearer for a local `laya-serve` started with `LAYA_API_KEY`. The local route needs no credential. |
@@ -33,7 +33,7 @@ The TypeScript defaults in `src/settings.ts` and the bundle defaults in `src/ind
 | `laya_endpoint_path` | `/v1/systemone` | Local path, the route the Decisions contract uses. |
 | `laya_model` | `convaiinnovations/laya` | Laya checkpoint. `english`, `multilingual`, or `typed-decisions` name one directly; any other value routes by script and language. |
 | `jev_fallback_enabled` | `true` | Allow fallback. |
-| `jev_fallback_order` | `typesafe, openrouter` | Order inside the hosted pair. Only `typesafe` and `openrouter` are accepted, because the local route replaces the pair rather than joining it. |
+| `jev_fallback_order` | `typesafe, openrouter` | Order inside the hosted pair. Only `typesafe` and `openrouter` are accepted, because the local route replaces the pair rather than joining it. Under `laya_then_hosted` this order supplies the hosted hops that follow the local one. |
 | `jev_fallback_on` | transport, timeout, 401, 403, 429, 5xx | Fallback triggers. |
 | `jev_fallback_cooldown_s` | `60` | Provider cooldown. |
 | `jev_fallback_max_retries` | `1` | Retry count. |
@@ -57,6 +57,12 @@ The TypeScript defaults in `src/settings.ts` and the bundle defaults in `src/ind
 
 With `auto`, absent keys are filtered. A pinned provider with a missing key fails fast. With both keys absent, scoring is disabled and the host path remains available. Key values must never appear in diagnostics.
 
+## Provider modes
+
+Three selectable routes exist. `auto` and the pinned `typesafe`, `openrouter` and `laya` values behave as before. `laya_then_hosted` is the explicit opt-in that puts the local `laya` server first and the hosted providers after it: the order is `laya` followed by the members of `jev_fallback_order` with a key present, built when the provider chain is constructed at load. The configured triggers, cooldown, and retries apply unchanged, so a `transport_error`, timeout, `401`, `403`, `429`, or `5xx` from the local server falls through to the hosted hop. A `laya_then_hosted` profile with no hosted key at all fails at load naming the missing variables, because the mode promises a fallback that cannot exist, and the check is unconditional even when `jev_fallback_enabled` is false. With `jev_fallback_enabled: false` the order collapses to the local hop alone, which duplicates the standalone `laya` mode.
+
+Privacy consequence: plain `laya` never sends state off the machine; `laya_then_hosted` does, because a failed local attempt re-sends the same state to the hosted API. `auto` still never selects the local route, `laya` stays a single-provider route with no fallback, and `jev_fallback_order` still rejects `laya` as a member, so `laya_then_hosted` is the only mode in which the local server leads a chain. Hosted answers through this mode are covered by unit tests with a synthetic transport; no live hosted answer is claimed.
+
 ## Storage and tools
 
 `LcmStore` owns raw rows, FTS indexing, summary nodes, edges, source links, hints, and committed or aborted node status. Raw identities are unique per session and immutable. `lcm_grep`, `lcm_expand`, and `lcm_nodes` are session-scoped tools. The current grep surface uses exact quoted FTS matching and returns at most 100 rows.
@@ -73,7 +79,7 @@ Endpoint validation decodes paths, rejects queries, fragments, credentials, unsa
 
 ## Metrics
 
-`jev_stats` includes candidate, keep, anchor, unscored, call, fallback, provider, threshold, LCM node, text-floor, freed-per-compaction, and unevaluated recall fields. `jev_calibrate` reports the live threshold, whether calibration is active, and how many samples the rolling window holds; with `dry_run` it sends one synthetic probe per configured provider and returns latency and status for each, including `error` with the missing environment-variable name when a provider has no key. `jev_providers` reports order, environment-variable names present, cooldowns, errors, and last provider. `jev_scores` and `jev_anchors` expose candidate diagnostics. Three consecutive cycles below 20% freed space emit a warning in the metrics implementation.
+`jev_stats` includes candidate, keep, anchor, unscored, call, fallback, provider, threshold, LCM node, text-floor, freed-per-compaction, and unevaluated recall fields. `jev_calibrate` reports the live threshold, whether calibration is active, and how many samples the rolling window holds; with `dry_run` it sends one synthetic probe per provider in the configured route, so a `laya_then_hosted` profile probes the local hop and the keyed hosted hops in that order, and returns latency and status for each, including `error` with the missing environment-variable name when a provider has no key. `jev_providers` reports the configured mode, the real provider order, environment-variable names present, cooldowns, errors, and the provider that last answered; key values are never printed. `jev_scores` and `jev_anchors` expose candidate diagnostics. Three consecutive cycles below 20% freed space emit a warning in the metrics implementation.
 
 ## Sources and lineage
 
