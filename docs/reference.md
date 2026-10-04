@@ -19,9 +19,12 @@ The TypeScript defaults in `src/settings.ts` and the bundle defaults in `src/ind
 | `retainRatio` | `0.16` | Bundle retention ratio. |
 | `maxTokens` | `8192` | Engine context budget. |
 | `auto` | `true` | Enable automatic compaction behavior. |
-| `jev_provider` | `auto` | `auto`, `typesafe`, `openrouter`, `laya` for a local server, or `laya_then_hosted` for the local server first with the hosted providers behind it. `laya_local` is accepted as an alias for `laya` and `laya_with_jev_fallback` as an alias for `laya_then_hosted`; both resolve to the canonical value at configuration time. |
+| `jev_provider` | `auto` | `auto`, `typesafe`, `openrouter`, `clef`, `laya` for a local server, or `laya_then_hosted` for the local server first with the hosted providers behind it. `clef_api` is accepted as an alias for `clef`. `laya_local` is accepted as an alias for `laya` and `laya_with_jev_fallback` as an alias for `laya_then_hosted`; all aliases resolve to the canonical value at configuration time. |
 | `TYPESAFE_API_KEY` | unset | TypeSafe credential. |
 | `OPENROUTER_API_KEY` | unset | OpenRouter credential. |
+| `CLOUDFLARE_API_TOKEN` | unset | Cloudflare credential for Clef. Needs **Account > Workers AI > Read** and is sent as a bearer token in the `Authorization` header. |
+| `CLOUDFLARE_ACCOUNT_ID` | unset | Cloudflare account that scopes the Workers AI endpoint. Configuration rather than a secret, but it appears in the request URL. Required for Clef alongside the token, because the endpoint is per account and the account cannot be inferred from the token. |
+| `clef_model` | `clef` | Clef checkpoint. `clef-flash` is the smaller variant. This is a setting on the one Clef provider, not a second provider name, alias, or chain member. |
 | `LAYA_API_KEY` | unset | Optional bearer for a local `laya-serve` started with `LAYA_API_KEY`. The local route needs no credential. |
 | `typesafe_base_url` | `https://api.typesafe.ai/v1` | TypeSafe base. |
 | `openrouter_base_url` | `https://openrouter.ai/api` | OpenRouter base. |
@@ -33,7 +36,7 @@ The TypeScript defaults in `src/settings.ts` and the bundle defaults in `src/ind
 | `laya_endpoint_path` | `/v1/systemone` | Local path, the route the Decisions contract uses. |
 | `laya_model` | `convaiinnovations/laya` | Laya checkpoint. `english`, `multilingual`, or `typed-decisions` name one directly; any other value routes by script and language. |
 | `jev_fallback_enabled` | `true` | Allow fallback. |
-| `jev_fallback_order` | `typesafe, openrouter` | Order inside the hosted pair. Only `typesafe` and `openrouter` are accepted, because the local route replaces the pair rather than joining it. Under `laya_then_hosted` this order supplies the hosted hops that follow the local one. |
+| `jev_fallback_order` | `typesafe, openrouter` | Order inside the hosted set. `typesafe`, `openrouter`, and `clef` are accepted, because the local route replaces the hosted set rather than joining it. Under `laya_then_hosted` this order supplies the hosted hops that follow the local one. Clef is never selected implicitly: it appears only when named here or as `jev_provider`. |
 | `jev_fallback_on` | transport, timeout, 401, 403, 429, 5xx | Fallback triggers. |
 | `jev_fallback_cooldown_s` | `60` | Provider cooldown. |
 | `jev_fallback_max_retries` | `1` | Retry count. |
@@ -59,7 +62,13 @@ With `auto`, absent keys are filtered. A pinned provider with a missing key fail
 
 ## Provider modes
 
-Three selectable routes exist. `auto` and the pinned `typesafe`, `openrouter` and `laya` values behave as before. `laya_then_hosted` is the explicit opt-in that puts the local `laya` server first and the hosted providers after it: the order is `laya` followed by the members of `jev_fallback_order` with a key present, built when the provider chain is constructed at load. The configured triggers, cooldown, and retries apply unchanged, so a `transport_error`, timeout, `401`, `403`, `429`, or `5xx` from the local server falls through to the hosted hop. A `laya_then_hosted` profile with no hosted key at all fails at load naming the missing variables, because the mode promises a fallback that cannot exist, and the check is unconditional even when `jev_fallback_enabled` is false. With `jev_fallback_enabled: false` the order collapses to the local hop alone, which duplicates the standalone `laya` mode.
+Four selectable routes exist. `auto` and the pinned `typesafe`, `openrouter`, `clef` and `laya` values behave as before. `laya_then_hosted` is the explicit opt-in that puts the local `laya` server first and the hosted providers after it: the order is `laya` followed by the members of `jev_fallback_order` with a key present, built when the provider chain is constructed at load. The configured triggers, cooldown, and retries apply unchanged, so a `transport_error`, timeout, `401`, `403`, `429`, or `5xx` from the local server falls through to the hosted hop. A `laya_then_hosted` profile with no hosted key at all fails at load naming the missing variables, because the mode promises a fallback that cannot exist, and the check is unconditional even when `jev_fallback_enabled` is false. With `jev_fallback_enabled: false` the order collapses to the local hop alone, which duplicates the standalone `laya` mode.
+
+`clef` leads with Clef and takes `jev_fallback_order` behind it, so unlike the pinned `typesafe` and `openrouter` routes it can hand over on a configured failure. Every chain member is filtered by the same usability predicate, and for Clef that predicate requires **both** `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`: the run endpoint is per account and the account is not inferable from the token, so a route that cannot address the account is dropped from the chain or, when `clef` is pinned, fails at load naming the missing variable. A pinned `clef` route with no credential therefore refuses to construct rather than reporting an empty order; `auto`, which only draws from providers it can authenticate, is the shape that collapses to no providers.
+
+Clef is called on Cloudflare's per-account Workers AI endpoint in a single request, so no Worker, GPU, or self-hosted deployment is needed. Both Cloudflare values are validated before any network work, so a missing one costs no request. A `score` answer requires its index to be an integer inside the criterion range, and its `probabilities` block is accepted as an object keyed by criterion or as a positional array; a `choice` answer requires a `probabilities` distribution, because a bare `choice` with nothing behind it carries no calibrated weight and is rejected rather than scored as an invented uniform guess. Question ids containing a character Clef rejects are sanitized on the way out and mapped back on the way in. Both the bare model output and Cloudflare's `success`/`result` envelope parse; `success: false` surfaces Cloudflare's own error codes as the failure category. Answers are held to the same `0` to `1` index scale the local route uses.
+
+Clef is covered by unit tests with a synthetic transport and by a socket-capture check on the wire shape. No live Clef call has been made: no credential available to this repository is authorized for Workers AI, so the wire contract comes from Cloudflare's published documentation rather than an observed response.
 
 Privacy consequence: plain `laya` never sends state off the machine; `laya_then_hosted` does, because a failed local attempt re-sends the same state to the hosted API. `auto` still never selects the local route, `laya` stays a single-provider route with no fallback, and `jev_fallback_order` still rejects `laya` as a member, so `laya_then_hosted` is the only mode in which the local server leads a chain. Hosted answers through this mode are covered by unit tests with a synthetic transport; no live hosted answer is claimed.
 
@@ -70,6 +79,7 @@ The DOGA fork of this design exposes exactly three decision modes. Two of those 
 | DOGA mode | Value here | Behaviour |
 |---|---|---|
 | `jev_api` | `auto`, `typesafe`, or `openrouter` | Hosted Jev ranking. This package splits that arrangement into `auto` plus the two pinned values, so `jev_api` is not accepted as an alias; a rejected value reports `invalid jev_provider` and names what is accepted. |
+| `clef_api` | `clef` | Cloudflare Clef first, with the members of `jev_fallback_order` behind it. |
 | `laya_local` | `laya` | The local `laya-serve` route alone, with no remote leg. |
 | `laya_with_jev_fallback` | `laya_then_hosted` | The local hop first, hosted providers only on a local failure, bounded by the breaker below. |
 

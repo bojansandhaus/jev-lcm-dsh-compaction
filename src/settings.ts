@@ -1,12 +1,13 @@
-export type JevMode = 'auto' | 'typesafe' | 'openrouter' | 'laya' | 'laya_then_hosted';
+import { clef_checkpoint } from './clef.js';
+export type JevMode = 'auto' | 'typesafe' | 'openrouter' | 'laya' | 'laya_then_hosted' | 'clef';
 /**
- * The DOGA v1.3.0 mode names, accepted as aliases for the two values this
- * package already ships. `settings()` resolves them to the canonical value, so
- * an alias never reaches a provider chain, a diagnostic, or a log.
+ * The DOGA mode names, accepted as aliases for the values this package already
+ * ships. `settings()` resolves them to the canonical value, so an alias never
+ * reaches a provider chain, a diagnostic, or a log.
  */
-export const MODE_ALIASES:Record<string,JevMode>={laya_local:'laya',laya_with_jev_fallback:'laya_then_hosted'};
-export const MODES:JevMode[]=['auto','typesafe','openrouter','laya','laya_then_hosted'];
-export type ModeInput=JevMode|'laya_local'|'laya_with_jev_fallback';
+export const MODE_ALIASES:Record<string,JevMode>={laya_local:'laya',laya_with_jev_fallback:'laya_then_hosted',clef_api:'clef'};
+export const MODES:JevMode[]=['auto','typesafe','openrouter','laya','laya_then_hosted','clef'];
+export type ModeInput=JevMode|'laya_local'|'laya_with_jev_fallback'|'clef_api';
 /** Canonical mode for a configured value, or undefined when nothing accepts it. */
 export function resolveMode(value:unknown):JevMode|undefined {
   const name=typeof value==='string'?value.trim().toLowerCase():'';
@@ -19,6 +20,7 @@ export interface Settings {
   openrouter_endpoint_path: string;
   jev_endpoint_path: string; jev_model: string; openrouter_model: string;
   laya_base_url: string; laya_endpoint_path: string; laya_model: string;
+  clef_model: string;
   jev_fallback_enabled: boolean; jev_fallback_order: ProviderName[];
   jev_fallback_on: string[]; jev_fallback_cooldown_s: number;
   jev_fallback_max_retries: number; request_timeout_s: number;
@@ -31,12 +33,13 @@ export interface Settings {
   max_request_tokens: number; truncate_head_chars: number;
   min_result_chars: number; hint_budget_tokens: number; lcm_rollup_fan_in: number;
 }
-export type ProviderName = 'typesafe' | 'openrouter' | 'laya';
+export type ProviderName = 'typesafe' | 'openrouter' | 'laya' | 'clef';
 export const defaults: Settings = {
   jev_provider:'auto', typesafe_base_url:'https://api.typesafe.ai/v1',
   openrouter_base_url:'https://openrouter.ai/api', openrouter_endpoint_path:'/alpha/decisions', jev_endpoint_path:'/systemone',
   jev_model:'jev-latest', openrouter_model:'~typesafe/jev-latest',
   laya_base_url:'http://127.0.0.1:8000', laya_endpoint_path:'/v1/systemone', laya_model:'convaiinnovations/laya',
+  clef_model:'clef',
   jev_fallback_enabled:true, jev_fallback_order:['typesafe','openrouter'],
   jev_fallback_on:['transport_error','timeout','401','403','429','5xx'],
   jev_fallback_cooldown_s:60, jev_fallback_max_retries:1, request_timeout_s:30,
@@ -58,16 +61,23 @@ export function endpoint(base:string,path:string):string {
 }
 /** Accepted configuration shape: the canonical modes plus the DOGA mode aliases. */
 export type SettingsInput=Partial<Omit<Settings,'jev_provider'>> & {jev_provider?:ModeInput};
+/**
+ * Providers `jev_fallback_order` accepts. `laya` is deliberately absent: the
+ * local route replaces the hosted pair for a profile rather than joining it,
+ * and `laya_then_hosted` is the one mode that puts it in front of them.
+ */
+export const FALLBACK_MEMBERS:ProviderName[]=['typesafe','openrouter','clef'];
 export function settings(input:SettingsInput={}):Settings {
   const provider=resolveMode(input.jev_provider??defaults.jev_provider);
-  if (!provider) throw new Error('invalid jev_provider: expected auto, typesafe, openrouter, laya, or laya_then_hosted, where laya_local aliases laya and laya_with_jev_fallback aliases laya_then_hosted');
+  if (!provider) throw new Error('invalid jev_provider: expected auto, typesafe, openrouter, laya, clef, or laya_then_hosted, where laya_local aliases laya, laya_with_jev_fallback aliases laya_then_hosted, and clef_api aliases clef');
   const s:Settings={...defaults,...input,jev_provider:provider};
-  if (!s.jev_fallback_order.length || new Set(s.jev_fallback_order).size!==s.jev_fallback_order.length || s.jev_fallback_order.some(p=>!['typesafe','openrouter'].includes(p))) throw new Error('invalid provider order');
+  if (!s.jev_fallback_order.length || new Set(s.jev_fallback_order).size!==s.jev_fallback_order.length || s.jev_fallback_order.some(p=>!FALLBACK_MEMBERS.includes(p))) throw new Error('invalid provider order');
   for (const v of [s.keep_threshold,s.keep_threshold_max,s.min_keep_rate,s.jev_urgent_context_ratio]) if (!Number.isFinite(v) || v<0 || v>1) throw new Error('invalid probability');
   for (const v of [s.jev_calibration_window,s.jev_calibration_min_samples,s.jev_batch_window_turns,s.jev_max_candidates_per_batch,s.max_state_tokens,s.max_request_tokens,s.hint_budget_tokens]) if (!Number.isInteger(v) || v<1) throw new Error('invalid budget');
   if (!Number.isInteger(s.lcm_rollup_fan_in) || s.lcm_rollup_fan_in < 0) throw new Error('invalid rollup fan-in');
   if (s.jev_calibration_min_samples>s.jev_calibration_window || s.max_request_tokens<=s.max_state_tokens || s.request_timeout_s<=0 || s.jev_fallback_cooldown_s<0 || s.jev_fallback_max_retries<0) throw new Error('invalid limits');
   endpoint(s.typesafe_base_url,s.jev_endpoint_path); endpoint(s.openrouter_base_url,'/alpha/decisions'); endpoint(s.laya_base_url,s.laya_endpoint_path);
+  s.clef_model=clef_checkpoint(s.clef_model);
   s.jev_anchor_patterns.forEach(p=>new RegExp(p,'g'));
   return s;
 }

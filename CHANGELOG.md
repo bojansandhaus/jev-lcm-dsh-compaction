@@ -35,6 +35,26 @@ Tamara Tran contributed the upstream state-shaping and two-question scoring desi
 
 The project uses the MIT license. See [third party notices](THIRD_PARTY_NOTICES.md) for licenses and specific reuse.
 
+## [1.0.0-rc.5] - 2026-10-04
+
+### Added
+
+- Cloudflare Clef as a fourth provider surface, hosted on Workers AI with no Worker, GPU, or self-hosted deployment. `CLOUDFLARE_ACCOUNT_ID` scopes the endpoint and `CLOUDFLARE_API_TOKEN` authorises it with **Account > Workers AI > Read**. Selectable as `jev_provider: clef`, listable in `jev_fallback_order`, and reachable through the `clef_api` mode alias. `clef_model` chooses `clef` or `clef-flash`, a setting on the one provider rather than a second name.
+- Both the bare model output and Cloudflare's `success`/`result` envelope parse, and `success: false` surfaces Cloudflare's error codes as the failure category. Question ids Clef rejects are sanitized outbound and mapped back inbound.
+- Clef is documented in the README, `docs/reference.md`, `docs/integrations.md`, and `docs/limitations.md`, including the privacy boundary: a Clef review sends the reviewed state off the machine on every call, and only `laya` stays local.
+
+### Fixed
+
+- The provider chain accepted a Clef route on the API token alone and ignored the account id, selecting a route that could not address the account and failing on the first request rather than at load. Chain members now pass one usability predicate, and pinned `clef` with no credential refuses to construct.
+- A positional `probabilities` array on a `score` answer was unreachable, so it was discarded and the score fell back to an index-derived value.
+- A `choice` answer with no `probabilities` block was scored as a uniform `1/n` guess instead of being rejected.
+- Pinned `clef` mode hardcoded a single-provider order and could never use its configured `jev_fallback_order`.
+- A route that collapses to a single provider no longer logs a failure line with no handover to explain.
+
+### Changed
+
+- 77 tests pass, up from 63, and no previously passing test was weakened. Typecheck passes for source and tests.
+
 ## [1.0.0-rc.4] - 2026-09-26
 
 Bounds the local Laya fallback, names the DOGA decision modes, and stops one log line from carrying host model text. The default and every existing provider value are unchanged.

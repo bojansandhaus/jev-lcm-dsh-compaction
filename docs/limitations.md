@@ -6,6 +6,8 @@ This is a release candidate, not a production-certified replacement.
 
 Tests use synthetic text and scores. HTTP tests use loopback servers. They do not measure provider quality, real billing, or comparative performance against private transcripts.
 
+Cloudflare Clef is implemented and tested but has never been called live. Every Cloudflare credential available to this project returned HTTP 401 from Workers AI, and no account id is configured, so the Clef wire contract comes from Cloudflare's published documentation rather than an observed response. Treat the first real Clef call as unverified. Its unit tests use a synthetic transport plus a socket-capture check on the request shape, which proves what is sent and how a response is read, not that Cloudflare accepts it.
+
 Selected conversation text is sent to the configured provider. This is not an automatic secret-redaction system. The local raw archive is not encrypted by this package. Use a private data directory.
 
 Hermes uses bundled upstream LCM. DSH uses its native BasicCompactionEngine with a separate SQLite archive and summary links, not a full TypeScript port of Hermes LCM.

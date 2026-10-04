@@ -27,6 +27,7 @@ The numbers in the first column belong to the cited PR. They are not fresh measu
 - Uses calibration rather than the rejected fixed `0.5` default.
 - Batches scoring and marks candidates beyond the state cap `jev_unscored`.
 - Accepts `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, or both, with automatic fallback in `auto` mode, or runs entirely locally against a Laya server with no key at all, or, as an explicit opt-in, tries the local server first and keeps the hosted providers behind it as a fallback.
+- Accepts Cloudflare Clef as a fourth provider surface, either as `jev_provider: clef` or as a named member of `jev_fallback_order`. It needs `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`, and `clef-flash` is a checkpoint on that one provider rather than a separate one.
 - Exposes `lcm_grep`, `lcm_expand`, `lcm_nodes`, `jev_stats`, `jev_providers`, `jev_scores`, `jev_anchors`, and `jev_calibrate` as session-scoped tools.
 - Keeps ordinary host condensation available when Jev is disabled or fails.
 
@@ -137,7 +138,11 @@ Provider environment variables are:
 export TYPESAFE_API_KEY='set-through-your-secret-manager'
 # or:
 export OPENROUTER_API_KEY='set-through-your-secret-manager'
-# with both keys, leave jev_provider at auto for fallback
+# or Clef on Cloudflare Workers AI (needs both values; the account id is
+# configuration, the token is the credential):
+export CLOUDFLARE_ACCOUNT_ID='0123456789abcdef0123456789abcdef'
+export CLOUDFLARE_API_TOKEN='set-through-your-secret-manager'
+# with several keys, leave jev_provider at auto for fallback
 # or run locally with no key: start laya-serve and set jev_provider to laya
 #   (the DOGA fork's name for this mode is laya_local)
 # or lead with the local server and fall back to a hosted key:
@@ -148,6 +153,29 @@ export OPENROUTER_API_KEY='set-through-your-secret-manager'
 ```
 
 Do not put real credentials in a profile file, patch, issue, test fixture, or log. The example values above are placeholders, not credentials.
+
+## Can I use Cloudflare Clef as a provider?
+
+Yes, as a fourth provider surface alongside TypeSafe, OpenRouter, and a local Laya server. Clef is [Cloudflare's typed decision model](https://developers.cloudflare.com/workers-ai/models/clef/), served on Workers AI, so no Worker, GPU, or self-hosted deployment is involved: the adapter calls Cloudflare's per-account endpoint directly.
+
+```sh
+export CLOUDFLARE_ACCOUNT_ID='0123456789abcdef0123456789abcdef'
+export CLOUDFLARE_API_TOKEN='set-through-your-secret-manager'
+# choose the checkpoint; `clef` is the default
+export JEV_CLEF_MODEL='clef'   # or 'clef-flash'
+```
+
+The account id is configuration rather than a secret, but it appears in the request URL. The token needs **Account > Workers AI > Read** and is sent as a bearer token in the `Authorization` header. Both are checked before any request is sent, and a missing one fails by naming the variable.
+
+Clef joins the provider vocabulary in three ways:
+
+- `jev_provider: clef` selects Clef first and uses `jev_fallback_order` behind it, so it can hand over to a hosted provider on a configured failure.
+- Listing `clef` in `jev_fallback_order` puts it in an `auto` or `laya_then_hosted` chain. It is never selected implicitly: the default order is TypeSafe and OpenRouter, so Clef runs only when you name it.
+- `clef_api` is accepted as a mode alias resolving to `clef`, and `CLEF_API` resolves the same way, matching how this repository already accepts the DOGA fork's `laya_local` and `laya_with_jev_fallback`.
+
+`clef-flash` is a checkpoint setting on the one Clef provider, not a second provider name, alias, or chain member.
+
+Privacy matters more here than in the other adapters. This plugin ranks conversation content before a compaction pass, so a Clef review sends the reviewed state off the machine on **every** call, not only when a fallback is reached. The `laya` route is the only one that keeps it local. Failure logs record the provider and the exception category only, never the state, candidate text, or answers.
 
 ## Which commands and tools are available?
 
@@ -190,6 +218,7 @@ The package declares Node `>=22.19.0`, Cordis `4.0.2`, and DSH `0.1.6-alpha.2` p
 - [Bojan Sandhaus, `jev-decisions`](https://github.com/bojansandhaus/jev-decisions), MIT: Decisions-shaped context and documentation lineage.
 - [TypeSafe](https://typesafe.ai/): Jev model and Decisions API lineage.
 - [OpenRouter](https://openrouter.ai/): alternate provider surface used by the adapter.
+- [Cloudflare Clef](https://developers.cloudflare.com/workers-ai/models/clef/): typed decision model served on Workers AI, used as a fourth provider surface.
 - [Ehrlich and Blackman, Voltropy PBC](https://arxiv.org/): LCM paper lineage.
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) and [Cordis](https://github.com/deepseek-ai/cordis): DSH host and plugin lifecycle.
 - [Hermes maintainers and PR #116246](https://github.com/NousResearch/hermes-agent/pull/116246): evaluation findings and the reason for this pre-pass design.
