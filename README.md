@@ -130,7 +130,7 @@ The bundle schema in `src/index.ts` currently exposes these DSH-level values:
 | `auto` | `true` | Enable automatic engine behavior. |
 | `jev` | host-supplied value | Jev engine configuration passed to the implementation. |
 
-The engine defaults in `src/settings.ts` include `jev_provider: auto`, TypeSafe base `https://api.typesafe.ai/v1`, OpenRouter base `https://openrouter.ai/api`, TypeSafe path `/systemone`, OpenRouter model `~typesafe/jev-latest`, Laya base `http://127.0.0.1:8000` with path `/v1/systemone`, a `0.15` fallback threshold, a `0.40` threshold cap, a `0.10` minimum keep rate, a 500-sample calibration window, a 50-sample calibration minimum, a three-turn batch window, a 300-candidate batch cap, a 25,000-token state cap, and a 30,000-token request cap. `jev_provider` also accepts the DOGA fork's `laya_local` and `laya_with_jev_fallback` as aliases for `laya` and `laya_then_hosted`, resolved to the canonical value at configuration time. See [`docs/reference.md`](docs/reference.md) for the complete table and validation rules.
+The engine defaults in `src/settings.ts` include `jev_provider: api_only` with `api_provider: auto`, TypeSafe base `https://api.typesafe.ai/v1`, OpenRouter base `https://openrouter.ai/api`, TypeSafe path `/systemone`, OpenRouter model `~typesafe/jev-latest`, Laya base `http://127.0.0.1:8000` with path `/v1/systemone`, a `0.15` fallback threshold, a `0.40` threshold cap, a `0.10` minimum keep rate, a 500-sample calibration window, a 50-sample calibration minimum, a three-turn batch window, a 300-candidate batch cap, a 25,000-token state cap, and a 30,000-token request cap. `jev_provider` also accepts the DOGA fork's `laya_local` and `laya_with_jev_fallback` as aliases for `laya` and `laya_then_hosted`, resolved to the canonical value at configuration time. See [`docs/reference.md`](docs/reference.md) for the complete table and validation rules.
 
 Provider environment variables are:
 
@@ -146,7 +146,7 @@ export CLOUDFLARE_API_TOKEN='set-through-your-secret-manager'
 # or run locally with no key: start laya-serve and set jev_provider to laya
 #   (the DOGA fork's name for this mode is laya_local)
 # or lead with the local server and fall back to a hosted key:
-#   jev_provider: laya_then_hosted   # DOGA fork name: laya_with_jev_fallback
+#   jev_provider: local_with_api_fallback   # DOGA fork name: laya_with_jev_fallback
 #   (needs at least one hosted key; a failed local attempt then sends the
 #    state to that hosted API, and three consecutive local failures suppress
 #    the remote leg until a local call succeeds)
@@ -156,7 +156,7 @@ Do not put real credentials in a profile file, patch, issue, test fixture, or lo
 
 ## Can I use Cloudflare Clef as a provider?
 
-Yes, as a fourth provider surface alongside TypeSafe, OpenRouter, and a local Laya server. Clef is [Cloudflare's typed decision model](https://developers.cloudflare.com/workers-ai/models/clef/), served on Workers AI, so no Worker, GPU, or self-hosted deployment is involved: the adapter calls Cloudflare's per-account endpoint directly.
+Yes, as a fourth provider surface alongside TypeSafe, OpenRouter, and a local decision model. Clef is [Cloudflare's typed decision model](https://developers.cloudflare.com/workers-ai/models/clef/), served on Workers AI, so no Worker, GPU, or self-hosted deployment is involved: the adapter calls Cloudflare's per-account endpoint directly.
 
 ```sh
 export CLOUDFLARE_ACCOUNT_ID='0123456789abcdef0123456789abcdef'
@@ -167,15 +167,76 @@ export JEV_CLEF_MODEL='clef'   # or 'clef-flash'
 
 The account id is configuration rather than a secret, but it appears in the request URL. The token needs **Account > Workers AI > Read** and is sent as a bearer token in the `Authorization` header. Both are checked before any request is sent, and a missing one fails by naming the variable.
 
-Clef joins the provider vocabulary in three ways:
+## What category of model is this?
 
-- `jev_provider: clef` selects Clef first and uses `jev_fallback_order` behind it, so it can hand over to a hosted provider on a configured failure.
-- Listing `clef` in `jev_fallback_order` puts it in an `auto` or `laya_then_hosted` chain. It is never selected implicitly: the default order is TypeSafe and OpenRouter, so Clef runs only when you name it.
-- `clef_api` is accepted as a mode alias resolving to `clef`, and `CLEF_API` resolves the same way, matching how this repository already accepts the DOGA fork's `laya_local` and `laya_with_jev_fallback`.
+These are **System One decision models**, also written "typed decision models". That is TypeSafe's own term for the category, coined alongside Jev, and it describes a model that returns typed values with a probability for each rather than prose: a `Choice` picks one option from a list you define, a `Score` places content on an ordered scale, and a `Noul` answers yes or no with a number from 0 to 1. The reference for the category is https://systemonemodels.org/guides/what-is-a-system-one-model/
 
-`clef-flash` is a checkpoint setting on the one Clef provider, not a second provider name, alias, or chain member.
+The members in this family, and where each one runs:
 
-Privacy matters more here than in the other adapters. This plugin ranks conversation content before a compaction pass, so a Clef review sends the reviewed state off the machine on **every** call, not only when a fallback is reached. The `laya` route is the only one that keeps it local. Failure logs record the provider and the exception category only, never the state, candidate text, or answers.
+| Model | Runs | Notes |
+|---|---|---|
+| Jev | hosted, TypeSafe | Closed weights, `TYPESAFE_API_KEY` |
+| Jev | hosted, OpenRouter | The same weights through a router, `OPENROUTER_API_KEY` |
+| Clef and Clef Flash | hosted, Cloudflare Workers AI | Two checkpoints, `CLOUDFLARE_API_TOKEN` plus `CLOUDFLARE_ACCOUNT_ID` |
+| Laya | local | Convai Innovations, open weights, the default |
+| Kev | local or hosted | Open weights, 0.8B to 27B on Qwen3.5 and Qwen3.8 bases; same `/v1/systemone` shape |
+| Tev1 | local or hosted | Together AI, Qwen3.5-4B fine-tune, open training recipe |
+| CLM | local | Contrastive Language Models, open weights, TypeSafe-compatible API |
+| GLiNER2.5-Decide | local | Fastino Labs, 340M encoder, open weights |
+| d1 | hosted, Liquid AI | Typed Choice, Score and Noul over Liquid's API |
+| Mercury Decide | hosted, Inception | Free on OpenRouter |
+| Solar Decide | hosted, Upstage | Beta on Upstage's API |
+| pplx-decider | hosted, Perplexity | Multimodal, Apache 2.0 weights |
+| Span-01 | hosted, Respan | Behaviour classifier for agent traces |
+| Decider 1 | hosted, meraGPT | No public weights |
+| OpenAI Decisions API | hosted, OpenAI | Limited preview, on GPT-6 Luna |
+
+Jev is one vendor's member of this category, not the category itself, so this documentation does not say "Jev-like model" as though Jev were the name of the thing.
+
+## Which four modes are there, and what do they mean?
+
+Configuration exposes exactly four decision modes. Each names which side leads and whether the other side is a fallback.
+
+| Mode | Leads | Fallback |
+|---|---|---|
+| `api_with_local_fallback` | hosted API | local model |
+| `api_only` | hosted API | none |
+| `local_only` | local model | none |
+| `local_with_api_fallback` | local model | hosted API |
+
+The mode does not name which hosted provider, because that is a separate setting. `api_provider` picks it: `typesafe`, `openrouter`, `clef`, or `auto` to take the usable members of `jev_fallback_order` in order. So `api_only` with `api_provider: clef` is Clef alone, and `api_with_local_fallback` with `api_provider: clef` is Clef first with the local model behind it.
+
+A mode that promises a fallback but has no usable provider on the other side fails at load, naming the missing environment variables. A pinned `api_provider` that cannot authenticate is a load error too, because naming it asserted something about the deployment. `auto` with nothing usable is not an error: ranking is simply disabled and host compaction continues.
+
+Earlier mode names keep working:
+
+| Earlier name | Now means |
+|---|---|
+| `auto` | `api_only`, or `api_with_local_fallback` when a local model is configured |
+| `typesafe`, `openrouter`, `jev_api`, `clef_api` | `api_only` |
+| `clef` | `api_with_local_fallback`, pinned to Clef |
+| `clef_with_local_fallback` | `api_with_local_fallback`, pinned to Clef |
+| `laya`, `laya_local` | `local_only` |
+| `laya_then_hosted`, `laya_with_jev_fallback` | `local_with_api_fallback` |
+
+Two of those carry a provider pin that the mode name used to imply: `clef`, `clef_api`, and `clef_with_local_fallback` still select Clef, unless you set `api_provider` yourself. `auto` keeps its old meaning of choosing among keyed hosted providers, and it only gains a local hop when you have pointed the local slot at a real engine, so a hosted-only profile routes exactly as it did.
+
+## Can the local model be something other than Laya?
+
+Yes, by configuration alone. `local_model` is the checkpoint or engine name sent to the local server, and it is deliberately not an allowlist, so a local model released tomorrow works without a code change:
+
+```yaml
+jev_provider: local_only
+local_model: kev            # or tev1, laya-multilingual, jeff-qwen3.5-0.8b, ...
+```
+
+The name is validated only for being non-empty and safe inside a URL path segment or a JSON string. Pointing the local slot at a different engine is a URL change: `chaitin/Decis` serves Laya and Kev, and a `jeff` family, behind one Jev-compatible `/v1/systemone` endpoint with one image per engine, where [swapping `base_url` is the whole migration](https://github.com/chaitin/Decis). [Tev1](https://github.com/togethercomputer/tev1) is Together AI's open-weight Qwen3.5-based decision model.
+
+`laya_model` is superseded by `local_model` and still read when `local_model` is left at its default, so an existing profile keeps working. `local_model` wins whenever it is set explicitly.
+
+No local model other than the default has been called live from this repository: no engine server is running here, so the interchangeability above is a contract claim from those projects' published documentation, not a measurement.
+
+Privacy matters more here than in the other adapters. This plugin ranks conversation content before a compaction pass, so a hosted review sends the reviewed state off the machine on **every** call, not only when a fallback is reached. The local modes are the only ones that keep it on the machine. Failure logs record the provider and the exception category only, never the state, candidate text, answers, or a credential.
 
 ## Which commands and tools are available?
 
@@ -272,16 +333,16 @@ Three measured limits come from a live run against `laya-serve` on 2026-09-22, b
 
 ### Can I run the local server first with a hosted provider as a fallback?
 
-Yes, as an explicit opt-in: set `jev_provider: laya_then_hosted` and the chain is the local Laya server first, then the hosted providers from `jev_fallback_order` that have a key, so `['laya', 'typesafe', 'openrouter']` with both keys and `['laya', 'typesafe']` with only TypeSafe. The usual triggers, cooldown, and retries apply unchanged, so a `transport_error`, timeout, `401`, `403`, `429`, or `5xx` from the local server falls through to the hosted hop. The mode loads only when at least one hosted key exists; with neither key it fails at load and names the missing variables, because the mode promises a fallback that cannot exist. Plain `laya` is untouched by this mode: still one provider, still no fallback.
+Yes, as an explicit opt-in: set `jev_provider: local_with_api_fallback` and the chain is the local Laya server first, then the hosted providers from `jev_fallback_order` that have a key, so `['laya', 'typesafe', 'openrouter']` with both keys and `['laya', 'typesafe']` with only TypeSafe. The usual triggers, cooldown, and retries apply unchanged, so a `transport_error`, timeout, `401`, `403`, `429`, or `5xx` from the local server falls through to the hosted hop. The mode loads only when at least one hosted key exists; with neither key it fails at load and names the missing variables, because the mode promises a fallback that cannot exist. Plain `laya` is untouched by this mode: still one provider, still no fallback.
 
-**Privacy consequence.** In plain `laya` mode the state never leaves the machine. In `laya_then_hosted` it does, because a local attempt that fails with a configured trigger re-sends the same state to the hosted API. That is the point of the mode, and it is why the mode is opt-in. `auto` never selects the local route, and `laya_then_hosted` is the only mode in which the local server leads a chain; `jev_fallback_order` still rejects `laya` as a member.
+**Privacy consequence.** In `local_only` mode the state never leaves the machine. In `local_with_api_fallback` it does, because a local attempt that fails with a configured trigger re-sends the same state to the hosted API. That is the point of the mode, and it is why the mode is opt-in. `auto` never selects the local route, and `laya_then_hosted` is the only mode in which the local server leads a chain; `jev_fallback_order` still rejects `laya` as a member.
 
 ```yaml
 - id: jev-lcm-compaction
   name: '@bojansandhaus/jev-lcm-dsh-compaction'
   config:
     jev:
-      jev_provider: laya_then_hosted
+      jev_provider: local_with_api_fallback
       laya_base_url: http://127.0.0.1:8123
       laya_model: english
       request_timeout_s: 120
@@ -290,7 +351,7 @@ Yes, as an explicit opt-in: set `jev_provider: laya_then_hosted` and the chain i
 
 `jev_providers` reports the resulting order and the provider that answered, and `jev_calibrate` with `dry_run` probes the local hop and the keyed hosted hops in that order. The hosted leg is covered by unit tests with a synthetic transport only: no hosted key was available in this checkout, and a real hosted call without a key returns `401` or `403`, which is itself a fallback trigger rather than an answer.
 
-**Repeated local failures are bounded.** Three consecutive local failures still try the hosted hop. Every further failure until a local success suppresses the hosted leg, logs `laya_fallback_suppressed count=<n> limit=3 reason=<category>`, and re-raises the local error instead of answering remotely, so a server that is down stops turning every request into remote traffic. A successful local answer clears the count, and the count is per process: restarting the engine forgets it. That is what the per-provider cooldown cannot do, because a cooldown is a per-chain timer that expires by itself and still allows one remote attempt per window. Only a failure the mode would have fallen back on spends counter budget, so a standalone `laya` profile, a chain collapsed with `jev_fallback_enabled: false`, and a `malformed` local answer that is not a configured trigger all leave the count at zero.
+**Repeated local failures are bounded.** Three consecutive local failures still try the hosted hop. Every further failure until a local success suppresses the hosted leg, logs `laya_fallback_suppressed count=<n> limit=3 reason=<category>`, and re-raises the local error instead of answering remotely, so a server that is down stops turning every request into remote traffic. A successful local answer clears the count, and the count is per process: restarting the engine forgets it. That is what the per-provider cooldown cannot do, because a cooldown is a per-chain timer that expires by itself and still allows one remote attempt per window. Only a failure the mode would have fallen back on spends counter budget, so a standalone `local_only` profile, a chain collapsed with `jev_fallback_enabled: false`, and a `malformed` local answer that is not a configured trigger all leave the count at zero.
 
 **The fallback is error-only.** A weak, low-confidence, or wrong-but-valid local answer is never replaced by a hosted one, and this breaker cannot detect a valid yet incorrect local judgment; it only bounds repeated remote egress after local errors.
 

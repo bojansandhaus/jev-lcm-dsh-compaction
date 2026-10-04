@@ -8,7 +8,12 @@ import { probeProviders } from '../src/providers.js';
 test('provider resolution, fallback, cooldown and no secret logging',async()=>{
  const log:string[]=[],now=[1];const s=settings();const c=new ProviderChain(s,{TYPESAFE_API_KEY:'SECRET_A',OPENROUTER_API_KEY:'SECRET_B'},async(url)=>{if(url.includes('typesafe'))throw new ProviderError('429');return {answers:{x:{noul:.19}}};},()=>now[0],s=>log.push(s));
  assert.deepEqual(await c.score({},{x:{type:'noul',instructions:'keep?'}}),{x:.19});assert.equal(c.fallback_count,1);assert.equal(c.last_provider,'openrouter');assert.ok(!JSON.stringify([log,c.diagnostics()]).includes('SECRET_'));
- assert.throws(()=>new ProviderChain(settings({jev_provider:'typesafe'}),{OPENROUTER_API_KEY:'x'}),/TYPESAFE_API_KEY/);
+ // `typesafe` as a mode name resolves to api_only; pinning the provider is now
+ // api_provider's job, so the assertion names it there.
+ assert.throws(()=>new ProviderChain(settings({jev_provider:'api_only',api_provider:'typesafe'}),{OPENROUTER_API_KEY:'x'}),/TYPESAFE_API_KEY/);
+ // `typesafe` alone still resolves, and still means hosted alone.
+ assert.equal(settings({jev_provider:'typesafe'}).api_provider,'auto');
+ assert.equal(settings({jev_provider:'typesafe'}).jev_provider,'api_only');
  const only=new ProviderChain(s,{OPENROUTER_API_KEY:'x'},async()=>({answers:{x:{noul:.19}}}));assert.deepEqual(await only.score({},{x:{type:'noul',instructions:'keep?'}}),{x:.19});
  await assert.rejects(new ProviderChain(s,{}).score({},{}),/disabled/);
  const down=new ProviderChain(s,{TYPESAFE_API_KEY:'x',OPENROUTER_API_KEY:'y'},async()=>{throw new ProviderError('429');},()=>now[0]);await assert.rejects(down.score({},{}),/429/);await assert.rejects(down.score({},{}),/cooldown/);now[0]=100;down.transport=async()=>({answers:{}});assert.deepEqual(await down.score({},{}),{});assert.equal(down.last_provider,'typesafe');

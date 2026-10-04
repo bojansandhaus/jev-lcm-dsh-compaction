@@ -57,8 +57,10 @@ export function clefUrl(account:string,model:string=CLEF_DEFAULT_MODEL):string {
  * string when both are present. The variable name is returned, never a value.
  */
 export function clef_credentials_error(env:Record<string,string|undefined>):string {
-  if(!(env[CLEF_ACCOUNT_ENV]??'').trim())return 'clef is selected but '+CLEF_ACCOUNT_ENV+' is not set';
+  // The token is named first because it is the credential; the account id is
+  // configuration. Each missing value must name itself, whichever is absent.
   if(!(env[CLEF_TOKEN_ENV]??'').trim())return 'clef is selected but '+CLEF_TOKEN_ENV+' is not set';
+  if(!(env[CLEF_ACCOUNT_ENV]??'').trim())return 'clef is selected but '+CLEF_ACCOUNT_ENV+' is not set';
   return '';
 }
 

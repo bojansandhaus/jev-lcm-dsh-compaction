@@ -35,6 +35,39 @@ Tamara Tran contributed the upstream state-shaping and two-question scoring desi
 
 The project uses the MIT license. See [third party notices](THIRD_PARTY_NOTICES.md) for licenses and specific reuse.
 
+## [1.0.0] - 2026-10-04
+
+First stable release. Supersedes the `1.0.0-rc.5` prerelease; release candidates are retired for this repository.
+
+### Added
+
+- Four decision modes, each naming which side leads and whether the other is a fallback: `api_with_local_fallback`, `api_only`, `local_only`, `local_with_api_fallback`.
+- `api_provider` setting picking the hosted side for the `api_*` modes: `typesafe`, `openrouter`, `clef`, or `auto`. The mode previously named the provider, which is why hosted-first-with-local-fallback had no name.
+- `local_model` setting selecting which local decision model answers. It is the checkpoint or engine name and is deliberately not an allowlist, so `laya`, `kev`, `tev1`, the `jeff` family, and any future local model work by configuration alone. `laya_model` is superseded and still read when `local_model` is left at its default.
+
+### Added
+
+- The category is named in the docs: these are **System One decision models**, also written "typed decision models", TypeSafe's own term for a model returning typed values with a probability for each rather than prose. Jev, Clef, Clef Flash, Laya, Kev, and Tev1 are named as members, with AnyJev and Nimble noted from the ecosystem index. Reference: https://systemonemodels.org/guides/what-is-a-system-one-model/
+- Repository topics now carry the taxonomy: `cloudflare`, `clef`, `laya`, `kev`, `tev1`, `system-one`, `decision-model`.
+
+### Changed
+
+- Every earlier mode name still resolves: `auto`, `typesafe`, `openrouter`, `jev_api`, `clef_api`, `clef`, `clef_with_local_fallback`, `laya`, `laya_local`, `laya_then_hosted`, `laya_with_jev_fallback`. `clef`, `clef_api`, and `clef_with_local_fallback` carry a Clef pin, applied only when `api_provider` is still `auto`.
+- `auto` keeps its historical meaning of choosing among keyed hosted providers, and only gains a local hop when a profile has pointed the local slot at a real engine.
+- A pinned `api_provider` now leads the order without excluding the rest of it, so a handover still exists after a cooldown.
+- `api_with_local_fallback` with nothing usable on the hosted side collapses to the local model alone instead of failing to construct, since a route that can still answer beats no route.
+
+### Fixed
+
+- The default loopback `laya_base_url` was treated as "a local model is configured", which silently added a local hop to every hosted-only profile. A local model now counts only when the profile points it somewhere else.
+- `clef_credentials_error` checked the account id before the token, so a credential carrying only a token reported the wrong missing variable.
+- A dry run in `api_only` with `api_provider: auto` no longer omits an unkeyed provider from its report, because a probe exists to name a missing key and cannot do so for a provider it never tried.
+
+### Verification
+
+- 77 tests pass, up from 63, with none deleted or weakened. Typecheck and build pass.
+- No live provider call was made: no local engine other than the default has ever run here, and no Cloudflare credential available to this machine is authorized for Workers AI.
+
 ## [1.0.0-rc.5] - 2026-10-04
 
 ### Added

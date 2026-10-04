@@ -38,7 +38,11 @@ async function provider(case_: Case) {
   const result: Case = { name: case_.name };
   let chain: ProviderChain;
   try {
-    chain = new ProviderChain(settings({ jev_provider: case_.provider ?? 'auto' }), case_.env ?? {}, transport, () => now);
+    // `api_provider` pins which hosted provider the api_* modes lead with, so a
+    // scenario that means "pinned TypeSafe" names it there rather than through
+    // the mode name.
+    const apiProvider=(case_.api_provider ?? 'auto') as never;
+    chain = new ProviderChain(settings({ jev_provider: case_.provider ?? 'auto', api_provider: apiProvider }), case_.env ?? {}, transport, () => now);
   } catch (error) {
     result.constructor_error = error instanceof Error ? error.message : String(error);
     return { ...result, calls: [], seen: [], fallback_count: 0, total_calls: 0, last_provider: '' };

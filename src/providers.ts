@@ -1,4 +1,4 @@
-import { Settings, ProviderName, endpoint } from './settings.js';
+import { Settings, ProviderName, HostedProvider, endpoint } from './settings.js';
 import { Transport, Questions, Scores, post, parseAnswers, ProviderError } from './jev-client.js';
 import { LAYA_FALLBACK_FAILURE_LIMIT,layaFailureCount,noteLayaFailure,noteLayaSuccess } from './laya-breaker.js';
 import { CLEF_ACCOUNT_ENV, CLEF_TOKEN_ENV, clef_answers, clef_checkpoint, clef_chunk, clef_credentials_error, clefUrl } from './clef.js';
@@ -70,7 +70,7 @@ export class OpenRouterProvider implements JevProvider {
  */
 export class LayaProvider implements JevProvider {
   name='laya' as const;url:string;model:string;
-  constructor(s:Settings){this.url=endpoint(s.laya_base_url,s.laya_endpoint_path);this.model=s.laya_model;}
+  constructor(s:Settings){this.url=endpoint(s.laya_base_url,s.laya_endpoint_path);this.model=s.local_model;}
 }
 /**
  * Cloudflare Workers AI Clef, a hosted decision model of its own.
@@ -103,17 +103,22 @@ export class ClefProvider implements JevProvider {
   body(state:unknown,questions:Questions):{model:string;state:unknown;questions:Questions}{return {model:this.model,state,questions};}
 }
 /**
- * The order a dry run probes: the local route alone for `laya`, the local hop
- * followed by the hosted members a key exists for in `laya_then_hosted`, and
- * the full hosted pair otherwise so a missing key still reports its variable
- * name.
+ * The providers a dry run should probe, one synthetic request each. A single-
+ * provider mode probes that one; a chain probes every hop, so a fallback route
+ * shows what each side would answer rather than only the leader.
  */
 export function routeNames(config:Settings,env:Record<string,string|undefined>):ProviderName[] {
-  if(config.jev_provider==='laya')return ['laya'];
-  if(config.jev_provider==='clef')return ['clef'];
+  if(config.jev_provider==='local_only')return ['laya'];
+  if(config.jev_provider==='api_only'){
+    if(config.api_provider!=='auto')return [config.api_provider as ProviderName];
+    // The whole configured order, not only the usable part: a dry run exists to
+    // report a missing key by naming its variable, which it cannot do for a
+    // provider it never tried.
+    return [...config.jev_fallback_order];
+  }
   const hosted=config.jev_fallback_order.filter(p=>usable(p,env));
-  if(config.jev_provider==='laya_then_hosted')return ['laya',...(hosted.length?hosted:config.jev_fallback_order)];
-  return ['typesafe','openrouter'];
+  const named=hosted.length?hosted:config.jev_fallback_order;
+  return config.jev_provider==='api_with_local_fallback'?[...named,'laya']:['laya',...named];
 }
 /**
  * Whether a provider can authenticate at all. The hosted providers do not
@@ -147,8 +152,12 @@ export async function probeProviders(config:Settings,env:Record<string,string|un
   const names=routeNames(config,env);
   for(const provider of names){
     const started=performance.now();
+    // A probe pins one provider, so the mode becomes the single-provider shape
+    // and the provider name moves into `api_provider`. The local side has no
+    // credential to pin, so it uses the local-only mode directly.
+    const pinned:Settings=provider==='laya'?{...config,jev_provider:'local_only'}:{...config,jev_provider:'api_only',api_provider:provider};
     try{
-      const probe=new ProviderChain({...config,jev_provider:provider,jev_fallback_enabled:false},env,transport,clock,log);
+      const probe=new ProviderChain({...pinned,jev_fallback_enabled:false},env,transport,clock,log);
       const scores=await probe.score({history:[]},{'calibrate:anchor_keep':{type:'noul',instructions:'Dry run probe for '+provider+'.'}});
       probes.push({provider,status:'ok',ms:Math.round(performance.now()-started),scores});
     }catch(error){
@@ -173,41 +182,63 @@ export class ProviderChain {
     // the keys so one diagnostics object describes the whole route, and only
     // its presence is ever reported.
     this.accounts={clef:env.CLOUDFLARE_ACCOUNT_ID?.trim()??''};
-    if(config.jev_provider==='laya'){
-      // Local mode replaces the hosted pair: one provider, no credential, and
-      // no chain to fall through.
-      this.order=['laya'];
-    }else if(config.jev_provider==='clef'){
-      // Clef mode leads with Clef. Both Cloudflare values are required, because
-      // the run endpoint is per account and the account is not inferable from
-      // the token, so a route that cannot address the account must fail here
-      // rather than on the first scored batch.
-      const missing=clef_credentials_error(env);
-      if(missing)throw new Error(missing);
-      // The account id goes into the URL, so it is resolved once here: a value
-      // that cannot address an account fails at load, not on the first batch.
-      clefUrl(this.accounts.clef??'',clef_checkpoint(config.clef_model));
-      this.order=['clef',...config.jev_fallback_order.filter(p=>p!=='clef'&&usable(p,env))];
-    }else if(config.jev_provider==='laya_then_hosted'){
-      // Explicit opt-in chain: the local hop leads and the hosted providers it
-      // can authenticate against follow. The mode promises a fallback, so an
-      // order with no hosted member is a load error rather than a quiet
-      // local-only route.
-      const hosted=config.jev_fallback_order.filter(p=>usable(p,env));
-      if(!hosted.length)throw new Error('missing '+config.jev_fallback_order.map(p=>ENV[p]).join(' and ')+' for jev_provider laya_then_hosted');
-      this.order=['laya',...hosted];
-    }else if(config.jev_provider==='auto'){
-      // The hosted chain contains only providers with a usable key. The keyless
-      // local route is never selected on its own initiative.
-      this.order=config.jev_fallback_order.filter(p=>usable(p,env));
-    }else{
-      // Only `typesafe` and `openrouter` reach here: `laya`, `clef`,
-      // `laya_then_hosted`, and `auto` are each handled above.
-      if(!this.keys[config.jev_provider])throw new Error('missing '+ENV[config.jev_provider]);
-      this.order=[config.jev_provider];
-    }
+    if(config.jev_provider==='local_only'){
+          // The local model alone: one provider, no credential, no chain.
+          this.order=['laya'];
+        }else if(config.jev_provider==='local_with_api_fallback'){
+                      // Local first, hosted behind it. The mode promises a fallback, so
+                      // an order with no hosted member is a load error rather than a
+                      // quiet local-only route.
+                      const hosted=this.hostedOrder(env);
+                      if(!hosted.length)throw new Error('missing '+config.jev_fallback_order.map(p=>ENV[p]).join(' and ')+' for jev_provider local_with_api_fallback');
+                      this.order=['laya',...hosted];
+                    }else if(config.jev_provider==='api_with_local_fallback'){
+                      // Hosted first, local model behind it. The local hop needs no
+                      // credential, so it is always available as the successor: an order
+                      // with no usable hosted member is still the local model alone, and
+                      // is reported as disabled rather than failing to construct.
+                      const hosted=this.hostedOrder(env);
+                      if(!hosted.length)this.order=['laya'];
+                      else this.order=[...hosted,'laya'];
+                    }else if(config.jev_provider==='api_only'){
+              // Hosted alone. `api_provider` names which one leads; `auto` takes the
+              // usable members of the configured order, which is what the old
+              // `auto` mode did, so a profile naming no provider keeps its routing.
+              //
+              // A pinned provider that cannot authenticate is a load error naming
+              // the variable: naming it asserted something about the deployment.
+              // `auto` with nothing usable is not an error at all, it is the
+              // documented degradation where ranking is disabled and host
+              // compaction continues.
+              this.order=this.hostedOrder(env);
+            }else{
+          throw new Error('unknown mode');
+        }
     if(!config.jev_fallback_enabled)this.order=this.order.slice(0,1);
     this.providers={typesafe:new TypeSafeProvider(config),openrouter:new OpenRouterProvider(config),laya:new LayaProvider(config),clef:new ClefProvider(config)};
+  }
+
+  /**
+   * The hosted providers this route may use, in order, filtered to those it can
+   * authenticate. `named` pins which one leads; the rest of the configured
+   * fallback order still follows it, because pinning says which provider is
+   * preferred, not that the route has exactly one hop. `'auto'` leads with the
+   * first usable member, which is the old `auto` mode's behavior. A pinned Clef
+   * has its account id resolved here too, so an account that cannot be addressed
+   * fails at load rather than on the first batch.
+   */
+  private hostedOrder(env:Record<string,string|undefined>,named:HostedProvider|'auto'=this.config.api_provider):ProviderName[]{
+    const usable_=this.config.jev_fallback_order.filter(p=>usable(p,env));
+    if(named==='auto')return usable_;
+    if(!usable(named,env)){
+      // A pinned provider that cannot authenticate has to name what it needed,
+      // which for Clef is two variables rather than one.
+      throw new Error(named==='clef'?clef_credentials_error(env):'missing '+ENV[named]);
+    }
+    if(named==='clef')clefUrl(this.accounts.clef??'',clef_checkpoint(this.config.clef_model));
+    // The pinned provider leads; anything else usable in the configured order
+    // follows it, so a handover still exists after it cools down.
+    return [named,...usable_.filter(p=>p!==named)];
   }
   diagnostics(){return {mode:this.config.jev_provider,order:this.order,keys_present:(Object.keys(ENV) as ProviderName[]).filter(p=>this.keys[p]).map(p=>ENV[p]),accounts_present:this.accounts.clef?[CLEF_ACCOUNT_ENV]:[],cooldown_seconds:Object.fromEntries(Object.entries(this.cooldowns).map(([p,t])=>[p,Math.max(0,t-this.clock())])),last_errors:this.errors,last_provider:this.last_provider};}
   /**

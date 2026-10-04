@@ -9,7 +9,7 @@ const LOCAL='http://127.0.0.1:8000/v1/systemone';
 
 test('a local route replaces the hosted pair instead of joining it',async()=>{
   const seen:string[]=[];
-  const chain=new ProviderChain(settings({jev_provider:'laya'}),{TYPESAFE_API_KEY:'SECRET_A',OPENROUTER_API_KEY:'SECRET_B'},async url=>{seen.push(url);return {answers:{x:{noul:.42}}};});
+  const chain=new ProviderChain(settings({jev_provider:'local_only'}),{TYPESAFE_API_KEY:'SECRET_A',OPENROUTER_API_KEY:'SECRET_B'},async url=>{seen.push(url);return {answers:{x:{noul:.42}}};});
   assert.deepEqual(chain.order,['laya']);
   assert.deepEqual(await chain.score({history:[]},QUESTION),{x:.42});
   assert.deepEqual(seen,[LOCAL]);
@@ -19,7 +19,7 @@ test('a local route replaces the hosted pair instead of joining it',async()=>{
 
 test('the local route needs no credential and sends the decisions payload',async()=>{
   let url='',key='SENTINEL',payload:unknown=null;
-  const chain=new ProviderChain(settings({jev_provider:'laya'}),{},async(u,k,p)=>{url=u;key=k;payload=p;return {answers:{x:{noul:.5}}};});
+  const chain=new ProviderChain(settings({jev_provider:'local_only'}),{},async(u,k,p)=>{url=u;key=k;payload=p;return {answers:{x:{noul:.5}}};});
   await chain.score({history:[]},QUESTION);
   assert.equal(url,LOCAL);
   assert.equal(key,'');
@@ -45,7 +45,7 @@ test('the local route is not a fallback member',()=>{
 
 test('a configured server token is forwarded and never printed',async()=>{
   let key='';
-  const chain=new ProviderChain(settings({jev_provider:'laya'}),{LAYA_API_KEY:'SECRET_LOCAL'},async(_u,k)=>{key=k;return {answers:{x:{noul:.5}}};});
+  const chain=new ProviderChain(settings({jev_provider:'local_only'}),{LAYA_API_KEY:'SECRET_LOCAL'},async(_u,k)=>{key=k;return {answers:{x:{noul:.5}}};});
   await chain.score({},QUESTION);
   assert.equal(key,'SECRET_LOCAL');
   assert.deepEqual(chain.diagnostics().keys_present,['LAYA_API_KEY']);
@@ -67,7 +67,7 @@ test('the wire client omits the authorization header when there is no key',async
 test('the dry run probe follows the configured route',async()=>{
   const hosted=await probeProviders(settings(),{TYPESAFE_API_KEY:'A',OPENROUTER_API_KEY:'B'},async()=>({answers:{'calibrate:anchor_keep':{noul:.3}}}));
   assert.deepEqual(hosted.map(p=>p.provider),['typesafe','openrouter']);
-  const local=await probeProviders(settings({jev_provider:'laya'}),{},async url=>{assert.equal(url,LOCAL);return {answers:{'calibrate:anchor_keep':{noul:.3}}};});
+  const local=await probeProviders(settings({jev_provider:'local_only'}),{},async url=>{assert.equal(url,LOCAL);return {answers:{'calibrate:anchor_keep':{noul:.3}}};});
   assert.deepEqual(local.map(p=>p.provider),['laya']);
   assert.equal(local[0].status,'ok');
 });

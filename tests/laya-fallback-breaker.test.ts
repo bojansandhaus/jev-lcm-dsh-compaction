@@ -14,7 +14,7 @@ const LIMIT=LAYA_FALLBACK_FAILURE_LIMIT;
  * A frozen clock with a zero cooldown leaves the local hop available on every
  * call, so a case exercises the breaker and not the per-provider cooldown.
  */
-const config=settings({jev_provider:'laya_then_hosted',jev_fallback_cooldown_s:0});
+const config=settings({jev_provider:'local_with_api_fallback',jev_fallback_cooldown_s:0});
 const frozen=()=>0;
 const localFails=(hosted:number)=>(url:string)=>{if(url===LOCAL)throw new ProviderError('transport_error');return {answers:{x:{noul:hosted}}};};
 /** Fail the local hop `times` times over, including the suppressed calls. */
@@ -63,7 +63,7 @@ test('the plain local route clears the same counter',async()=>{
   const failing=new ProviderChain(config,BOTH,async url=>localFails(.37)(url),frozen);
   await failing.score({},QUESTION);
   assert.equal(layaFailureCount(),1);
-  const localOnly=new ProviderChain(settings({jev_provider:'laya'}),BOTH,async()=>({answers:{x:{noul:.6}}}),frozen);
+  const localOnly=new ProviderChain(settings({jev_provider:'local_only'}),BOTH,async()=>({answers:{x:{noul:.6}}}),frozen);
   assert.deepEqual(await localOnly.score({},QUESTION),{x:.6});
   assert.equal(layaFailureCount(),0);
 });
@@ -88,7 +88,7 @@ test('a weak local answer never triggers the hosted fallback',async()=>{
 test('a local-only route never spends breaker budget and never logs suppression',async()=>{
   resetLayaBreaker();
   const log:string[]=[];
-  const chain=new ProviderChain(settings({jev_provider:'laya'}),BOTH,async()=>{throw new ProviderError('transport_error');},frozen,l=>log.push(l));
+  const chain=new ProviderChain(settings({jev_provider:'local_only'}),BOTH,async()=>{throw new ProviderError('transport_error');},frozen,l=>log.push(l));
   assert.equal(await exhaust(LIMIT+2,chain),LIMIT+2);
   assert.equal(layaFailureCount(),0);
   assert.deepEqual(log,[]);
@@ -103,16 +103,16 @@ test('a local failure that is not a configured trigger does not spend breaker bu
 });
 
 test('the DOGA mode aliases resolve to the canonical provider values',()=>{
-  assert.equal(settings({jev_provider:'laya_local'}).jev_provider,'laya');
-  assert.equal(settings({jev_provider:'laya_with_jev_fallback'}).jev_provider,'laya_then_hosted');
-  assert.equal(settings({jev_provider:'Laya_Local' as never}).jev_provider,'laya');
-  assert.equal(settings({jev_provider:'LAYA_WITH_JEV_FALLBACK' as never}).jev_provider,'laya_then_hosted');
-  assert.deepEqual(new ProviderChain(settings({jev_provider:'laya_local'}),BOTH).order,new ProviderChain(settings({jev_provider:'laya'}),BOTH).order);
-  assert.deepEqual(new ProviderChain(settings({jev_provider:'laya_with_jev_fallback'}),BOTH).order,new ProviderChain(settings({jev_provider:'laya_then_hosted'}),BOTH).order);
+  assert.equal(settings({jev_provider:'laya_local'}).jev_provider,'local_only');
+  assert.equal(settings({jev_provider:'laya_with_jev_fallback'}).jev_provider,'local_with_api_fallback');
+  assert.equal(settings({jev_provider:'Laya_Local' as never}).jev_provider,'local_only');
+  assert.equal(settings({jev_provider:'LAYA_WITH_JEV_FALLBACK' as never}).jev_provider,'local_with_api_fallback');
+  assert.deepEqual(new ProviderChain(settings({jev_provider:'laya_local'}),BOTH).order,new ProviderChain(settings({jev_provider:'local_only'}),BOTH).order);
+  assert.deepEqual(new ProviderChain(settings({jev_provider:'laya_with_jev_fallback'}),BOTH).order,new ProviderChain(settings({jev_provider:'local_with_api_fallback'}),BOTH).order);
   assert.deepEqual(new ProviderChain(settings({jev_provider:'laya_with_jev_fallback'}),BOTH).order,['laya','typesafe','openrouter']);
-  assert.equal(new ProviderChain(settings({jev_provider:'laya_with_jev_fallback'}),BOTH).diagnostics().mode,'laya_then_hosted');
-  for(const mode of ['auto','typesafe','openrouter','laya','laya_then_hosted'] as const)assert.equal(settings({jev_provider:mode}).jev_provider,mode);
-  for(const rejected of ['laya_hosted','laya_then_remote','jev_api','local',''])assert.throws(()=>settings({jev_provider:rejected as never}),/invalid jev_provider: expected/);
+  assert.equal(new ProviderChain(settings({jev_provider:'laya_with_jev_fallback'}),BOTH).diagnostics().mode,'local_with_api_fallback');
+  for(const mode of ['api_with_local_fallback','api_only','local_only','local_with_api_fallback'] as const)assert.equal(settings({jev_provider:mode}).jev_provider,mode);
+  for(const rejected of ['laya_hosted','laya_then_remote','local',''])assert.throws(()=>settings({jev_provider:rejected as never}),/invalid jev_provider: expected/);
 });
 
 test('the order validator still rejects the local route under either alias',()=>{
