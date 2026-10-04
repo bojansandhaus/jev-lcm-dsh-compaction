@@ -222,3 +222,9 @@ Fixes the Jev-only compaction failure modes identified in [NousResearch/hermes-a
 Release content is complete but unpublished. This is a port of [jev-lcm-hermes-compaction](https://github.com/bojansandhaus/jev-lcm-hermes-compaction). The GitHub remote, repository topic, and draft release use the stored Git credential. Registry publication still requires an authenticated npm session, which this machine does not have. See [docs/compliance.md](docs/compliance.md) and [docs/verification.md](docs/verification.md).
 
 Licensed under the MIT license.
+
+## 1.0.1 - 2026-10-05
+
+- Bounded the reason-sentence anchor pattern and added a trigger pre-test. The unbounded greedy prefix made the per-turn anchor scan take 4.6 seconds on a single 64 KB terminator-free input; it now takes 1 ms. Cached compiled regexes instead of rebuilding one per pattern per message.
+- Ordinary sentences extract identical spans, pinned by `tests/anchors-perf.test.ts`.
+- Full detail in `RELEASE_NOTES_v1.0.1.md`.

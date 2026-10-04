@@ -123,7 +123,7 @@ export const defaults: Settings = {
   keep_threshold:.15, keep_threshold_max:.40, min_keep_rate:.10,
   jev_calibration_enabled:true, jev_calibration_window:500, jev_calibration_min_samples:50,
   conservative:false, jev_anchor_protection_enabled:true,
-  jev_anchor_patterns:[String.raw`\b[a-f0-9]{7,40}\b`,String.raw`\b[A-Z_]{2,}_(?:KEY|TOKEN|SECRET|URL|PATH|ID)\b`,String.raw`[^.!?\n]*(?:root cause|because|constraint|must|never|always)[^.!?\n]*[.!?]?`,String.raw`(?:\bline \d+\b|:\d+:\d+)`,'`[^`\\n]+`',String.raw`["'][^"'\n]*(?:/|\\)[^"'\n]*["']`,String.raw`\b[vV]?\d+\.\d+\.\d+(?:[+.-][\w.]+)?\b`],
+  jev_anchor_patterns:[String.raw`\b[a-f0-9]{7,40}\b`,String.raw`\b[A-Z_]{2,}_(?:KEY|TOKEN|SECRET|URL|PATH|ID)\b`,String.raw`[^.!?\n]{0,400}(?:root cause|because|constraint|must|never|always)[^.!?\n]{0,400}[.!?]?`,String.raw`(?:\bline \d+\b|:\d+:\d+)`,'`[^`\\n]+`',String.raw`["'][^"'\n]*(?:/|\\)[^"'\n]*["']`,String.raw`\b[vV]?\d+\.\d+\.\d+(?:[+.-][\w.]+)?\b`],
   jev_batch_window_turns:3, jev_max_candidates_per_batch:300, jev_urgent_context_ratio:.90,
   max_state_tokens:25000, max_request_tokens:30000, truncate_head_chars:300,
   min_result_chars:8000, hint_budget_tokens:4000, lcm_rollup_fan_in:4,
@@ -177,7 +177,9 @@ export function settings(input:SettingsInput={}):Settings {
   // when `local_model` was left at its default.
   s.local_model=input.local_model!==undefined?model:(input.laya_model??defaults.laya_model).trim()||defaults.local_model;
   s.clef_model=clef_checkpoint(s.clef_model);
-  s.jev_anchor_patterns.forEach(p=>new RegExp(p,'g'));
+  // Fail fast on an unparseable pattern here, at config time, rather than
+  // letting it throw from inside the per-message scan on some later turn.
+  for(const p of s.jev_anchor_patterns)new RegExp(p,'g');
   return s;
 }
 /**
