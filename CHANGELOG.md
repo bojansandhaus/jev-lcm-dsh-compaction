@@ -43,12 +43,12 @@ First stable release. Supersedes the `1.0.0-rc.5` prerelease; release candidates
 
 - Four decision modes, each naming which side leads and whether the other is a fallback: `api_with_local_fallback`, `api_only`, `local_only`, `local_with_api_fallback`.
 - `api_provider` setting picking the hosted side for the `api_*` modes: `typesafe`, `openrouter`, `clef`, or `auto`. The mode previously named the provider, which is why hosted-first-with-local-fallback had no name.
-- `local_model` setting selecting which local decision model answers. It is the checkpoint or engine name and is deliberately not an allowlist, so `laya`, `kev`, `tev1`, the `jeff` family, and any future local model work by configuration alone. `laya_model` is superseded and still read when `local_model` is left at its default.
+- `local_model` setting selecting which local decision model answers, on the local side of Laya or other pre-deterministic routing models. It is the checkpoint or engine name and is deliberately not an allowlist, so the Laya default, `laya-multilingual`, and any future pre-deterministic routing model work by configuration alone. `laya_model` is superseded and still read when `local_model` is left at its default.
 
 ### Added
 
-- The category is named in the docs: these are **System One decision models**, also written "typed decision models", TypeSafe's own term for a model returning typed values with a probability for each rather than prose. Jev, Clef, Clef Flash, Laya, Kev, and Tev1 are named as members, with AnyJev and Nimble noted from the ecosystem index. Reference: https://systemonemodels.org/guides/what-is-a-system-one-model/
-- Repository topics now carry the taxonomy: `cloudflare`, `clef`, `laya`, `kev`, `tev1`, `system-one`, `decision-model`.
+- The category is named in the docs: these are **System One decision models**, also written "typed decision models", TypeSafe's own term for a model returning typed values with a probability for each rather than prose. Jev, Clef, Clef Flash, and Laya are named as members. Reference: https://systemonemodels.org/guides/what-is-a-system-one-model/
+- Repository topics now carry the taxonomy: `clef`, `cloudflare`, `compaction`, `context-management`, `decision-model`, `deepseek-harness`, `dsh-plugin`, `jev`, `laya`, `lcm`, `system-one`.
 
 ### Changed
 

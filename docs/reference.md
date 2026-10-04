@@ -21,7 +21,7 @@ The TypeScript defaults in `src/settings.ts` and the bundle defaults in `src/ind
 | `auto` | `true` | Enable automatic compaction behavior. |
 | `jev_provider` | `api_only` | One of the four modes: `api_with_local_fallback`, `api_only`, `local_only`, `local_with_api_fallback`. Earlier names stay valid as aliases; see the mode table below. |
 | `api_provider` | `auto` | Which hosted provider the `api_*` modes lead with: `typesafe`, `openrouter`, `clef`, or `auto` for the usable members of `jev_fallback_order` in order. A pinned provider that cannot authenticate fails at load naming its variable. |
-| `local_model` | `convaiinnovations/laya` | Which local decision model answers, sent as the checkpoint or engine name. Deliberately not an allowlist, so a newly released local model works without a code change. Rejects only an empty value or one unsafe in a URL path segment or JSON string. See the local model section. |
+| `local_model` | `convaiinnovations/laya` | Which local decision model answers, sent as the checkpoint or engine name, on the local side of Laya or other pre-deterministic routing models. Deliberately not an allowlist, so a newly released local model works without a code change. Rejects only an empty value or one unsafe in a URL path segment or JSON string. See the local model section. |
 | `TYPESAFE_API_KEY` | unset | TypeSafe credential. |
 | `OPENROUTER_API_KEY` | unset | OpenRouter credential. |
 | `CLOUDFLARE_API_TOKEN` | unset | Cloudflare credential for Clef. Needs **Account > Workers AI > Read** and is sent as a bearer token in the `Authorization` header. |
@@ -66,9 +66,9 @@ With `auto`, absent keys are filtered. A pinned provider with a missing key fail
 
 The providers here are **System One decision models**, also written "typed decision models". The term is TypeSafe's own, and the reference is https://systemonemodels.org/guides/what-is-a-system-one-model/ . A System One model returns typed values with a probability for each rather than prose: `Choice` picks one option from a list, `Score` places content on an ordered scale, `Noul` answers yes or no with a number from 0 to 1.
 
-Members in this family: **Jev** (hosted by TypeSafe or OpenRouter, closed weights), **Clef** and **Clef Flash** (hosted on Cloudflare Workers AI), **Laya** (local, open weights, the default here), **Kev** (open weights, 0.8B to 27B on Qwen3.5 and Qwen3.8 bases, serving the same `/v1/systemone` shape as TypeSafe's API), and **Tev1** (Together AI, Qwen3.5-based, open weights).
+Members named in this repository: **Jev** (hosted by TypeSafe or OpenRouter, closed weights), **Clef** and **Clef Flash** (hosted on Cloudflare Workers AI), and **Laya** (local, open weights, the default here).
 
-Jev is one vendor's member of the category rather than the category's name, so this documentation does not use "Jev-like model" as a category term.
+Jev is one vendor's member of the category rather than the category's name, so this documentation names the category System One rather than after one vendor.
 
 ## Provider modes
 
@@ -107,9 +107,9 @@ The Clef names carry a provider pin because a mode no longer names one. They set
 
 ## The local model slot
 
-`local_model` is the checkpoint or engine name sent to the local server. It is not an allowlist: it rejects an empty or whitespace-only value and any value containing a character that would corrupt a URL path segment or a JSON string, and accepts everything else. A local model released tomorrow therefore works by configuration.
+The local slot is Laya or other pre-deterministic routing models: `local_model` is the checkpoint or engine name sent to the local server. It is not an allowlist: it rejects an empty or whitespace-only value and any value containing a character that would corrupt a URL path segment or a JSON string, and accepts everything else. A pre-deterministic routing model released tomorrow therefore works by configuration.
 
-Models known to fit the same `/v1/systemone` contract: `laya` (Convai Innovations, also `laya-multilingual` and `laya-typed-decisions`), `kev` (also published as `kev-0.8b`), `tev1` (Together AI, Qwen3.5-based, with `Tev1-4B` and `Tev1-0.8B` checkpoints), and the `jeff` family such as `jeff-qwen3.5-0.8b` and `jeff-gemma4-e2b`. `chaitin/Decis` serves Laya and Kev, and a `jeff` family, behind one Jev-compatible endpoint with one image per engine, where swapping `base_url` is the whole migration. Switching engines is therefore a `local_model` and `laya_base_url` change, with no code change.
+Engine names known to fit the same `/v1/systemone` contract: `laya` (Convai Innovations, also `laya-multilingual` and `laya-typed-decisions`). A self-hosted engine server such as [chaitin/Decis](https://github.com/chaitin/Decis) publishes pre-deterministic routing models behind one Jev-compatible endpoint with one image per engine, where swapping `base_url` is the whole migration. Switching engines is therefore a `local_model` and `laya_base_url` change, with no code change.
 
 Only the default local model has ever been called live from this repository. No other engine has been run here, so the list above is a contract claim from those projects' published documentation rather than a measurement.
 

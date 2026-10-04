@@ -21,15 +21,15 @@ A pinned `api_provider` leads but does not exclude the rest of the configured or
 
 This repository names the category it works in. These are **System One decision models**, also written "typed decision models", which is TypeSafe's own term for a model that returns typed values with a probability for each rather than prose: `Choice` picks one option from a list, `Score` places content on an ordered scale, and `Noul` answers yes or no with a number from 0 to 1. The reference is https://systemonemodels.org/guides/what-is-a-system-one-model/
 
-Members in this family: **Jev** (hosted by TypeSafe or OpenRouter, closed weights), **Clef** and **Clef Flash** (hosted on Cloudflare Workers AI), **Laya** (local, open weights, the default), **Kev** (open weights, 0.8B to 27B on Qwen3.5 and Qwen3.8 bases, serving the same `/v1/systemone` shape as TypeSafe's API), and **Tev1** (Together AI, Qwen3.5-based, open weights). 
+Members named in these notes: **Jev** (hosted by TypeSafe or OpenRouter, closed weights), **Clef** and **Clef Flash** (hosted on Cloudflare Workers AI), and **Laya** (local, open weights, the default).
 
-Jev is one vendor's member of the category, not the category's name, so these notes say "System One decision model" rather than "Jev-like model".
+Jev is one vendor's member of the category, not the category's name, so these notes say "System One decision model" rather than naming the category after one vendor.
 
 ### Laya is now a slot, not a model
 
-`local_model` selects which local decision model answers. It is the checkpoint or engine name sent to the local server, and it is deliberately not an allowlist: it rejects only an empty value or one containing a character that would corrupt a URL path segment or a JSON string. A local model released tomorrow works by configuration, with no code change.
+The local side is Laya or other pre-deterministic routing models: `local_model` selects which one answers. It is the checkpoint or engine name sent to the local server, and it is deliberately not an allowlist: it rejects only an empty value or one containing a character that would corrupt a URL path segment or a JSON string. A pre-deterministic routing model released tomorrow works by configuration, with no code change.
 
-Models known to fit the same `/v1/systemone` contract are `laya` (Convai Innovations), `kev`, `tev1` (Together AI, Qwen3.5-based), and the `jeff` family. `chaitin/Decis` serves Laya and Kev, and a `jeff` family, behind one Jev-compatible endpoint with one image per engine, where swapping `base_url` is the whole migration. Switching engines is a `local_model` and `laya_base_url` change.
+Engine names known to fit the same `/v1/systemone` contract are the Laya ones, `laya` (Convai Innovations), `laya-multilingual`, and `laya-typed-decisions`. A self-hosted engine server such as [chaitin/Decis](https://github.com/chaitin/Decis) publishes pre-deterministic routing models behind one Jev-compatible endpoint with one image per engine, where swapping `base_url` is the whole migration. Switching engines is a `local_model` and `laya_base_url` change.
 
 `laya_model` is superseded and still read when `local_model` is left at its default, so an existing profile keeps working; `local_model` wins whenever it is set explicitly.
 

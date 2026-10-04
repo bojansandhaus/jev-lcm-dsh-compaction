@@ -171,7 +171,7 @@ The account id is configuration rather than a secret, but it appears in the requ
 
 These are **System One decision models**, also written "typed decision models". That is TypeSafe's own term for the category, coined alongside Jev, and it describes a model that returns typed values with a probability for each rather than prose: a `Choice` picks one option from a list you define, a `Score` places content on an ordered scale, and a `Noul` answers yes or no with a number from 0 to 1. The reference for the category is https://systemonemodels.org/guides/what-is-a-system-one-model/
 
-The members in this family, and where each one runs:
+The members this repository names, and where each one runs:
 
 | Model | Runs | Notes |
 |---|---|---|
@@ -179,19 +179,8 @@ The members in this family, and where each one runs:
 | Jev | hosted, OpenRouter | The same weights through a router, `OPENROUTER_API_KEY` |
 | Clef and Clef Flash | hosted, Cloudflare Workers AI | Two checkpoints, `CLOUDFLARE_API_TOKEN` plus `CLOUDFLARE_ACCOUNT_ID` |
 | Laya | local | Convai Innovations, open weights, the default |
-| Kev | local or hosted | Open weights, 0.8B to 27B on Qwen3.5 and Qwen3.8 bases; same `/v1/systemone` shape |
-| Tev1 | local or hosted | Together AI, Qwen3.5-4B fine-tune, open training recipe |
-| CLM | local | Contrastive Language Models, open weights, TypeSafe-compatible API |
-| GLiNER2.5-Decide | local | Fastino Labs, 340M encoder, open weights |
-| d1 | hosted, Liquid AI | Typed Choice, Score and Noul over Liquid's API |
-| Mercury Decide | hosted, Inception | Free on OpenRouter |
-| Solar Decide | hosted, Upstage | Beta on Upstage's API |
-| pplx-decider | hosted, Perplexity | Multimodal, Apache 2.0 weights |
-| Span-01 | hosted, Respan | Behaviour classifier for agent traces |
-| Decider 1 | hosted, meraGPT | No public weights |
-| OpenAI Decisions API | hosted, OpenAI | Limited preview, on GPT-6 Luna |
 
-Jev is one vendor's member of this category, not the category itself, so this documentation does not say "Jev-like model" as though Jev were the name of the thing.
+Jev is one vendor's member of this category, not the category itself, so this documentation names the category System One rather than after any single vendor.
 
 ## Which four modes are there, and what do they mean?
 
@@ -223,14 +212,14 @@ Two of those carry a provider pin that the mode name used to imply: `clef`, `cle
 
 ## Can the local model be something other than Laya?
 
-Yes, by configuration alone. `local_model` is the checkpoint or engine name sent to the local server, and it is deliberately not an allowlist, so a local model released tomorrow works without a code change:
+Yes, by configuration alone. The local side is **Laya or other pre-deterministic routing models**: `local_model` is the checkpoint or engine name sent to the local server, and it is deliberately not an allowlist, so a pre-deterministic routing model released tomorrow works without a code change:
 
 ```yaml
 jev_provider: local_only
-local_model: kev            # or tev1, laya-multilingual, jeff-qwen3.5-0.8b, ...
+local_model: your-local-engine   # the checkpoint or engine name your local server serves
 ```
 
-The name is validated only for being non-empty and safe inside a URL path segment or a JSON string. Pointing the local slot at a different engine is a URL change: `chaitin/Decis` serves Laya and Kev, and a `jeff` family, behind one Jev-compatible `/v1/systemone` endpoint with one image per engine, where [swapping `base_url` is the whole migration](https://github.com/chaitin/Decis). [Tev1](https://github.com/togethercomputer/tev1) is Together AI's open-weight Qwen3.5-based decision model.
+The name is validated only for being non-empty and safe inside a URL path segment or a JSON string. Pointing the local slot at a different engine is a URL change: a self-hosted engine server such as [chaitin/Decis](https://github.com/chaitin/Decis) publishes pre-deterministic routing models behind one Jev-compatible `/v1/systemone` endpoint with one image per engine, where [swapping `base_url` is the whole migration](https://github.com/chaitin/Decis).
 
 `laya_model` is superseded by `local_model` and still read when `local_model` is left at its default, so an existing profile keeps working. `local_model` wins whenever it is set explicitly.
 

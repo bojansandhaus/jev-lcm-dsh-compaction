@@ -79,11 +79,11 @@ export interface Settings {
   laya_base_url: string; laya_endpoint_path: string;
   /**
    * Which local decision model answers. This is the checkpoint or engine name
-   * sent to the local server, not a provider name: `laya` is the default, and
-   * `kev`, `tev1`, `laya-multilingual`, and the `jeff` family all fit the same
-   * `/v1/systemone` contract and work by changing this value alone. It is
-   * deliberately not an allowlist, so a newly released local model works without
-   * a code change.
+   * sent to the local server, not a provider name. The local side is Laya or
+   * other pre-deterministic routing models: `laya` is the default, and an engine
+   * such as `laya-multilingual` fits the same `/v1/systemone` contract and works
+   * by changing this value alone. It is deliberately not an allowlist, so a
+   * newly released local model works without a code change.
    */
   local_model: string;
   /**
