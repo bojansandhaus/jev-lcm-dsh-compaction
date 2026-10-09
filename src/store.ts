@@ -101,14 +101,32 @@ export class LcmStore {
   markNodeAborted(id: number): void { this.db.prepare('UPDATE nodes SET status=? WHERE id=? AND status=?').run('aborted', id, 'pending'); }
   saveHints(session: string, candidates: unknown[]): void {
     const put = this.db.prepare('INSERT OR REPLACE INTO hints(session,candidate,data) VALUES(?,?,?)');
-    for (const item of candidates) { const value = item as { id: string }; put.run(session, value.id, JSON.stringify(value)); }
+    for (const item of candidates) {
+      const value = item as { id: string; scores?: Record<string, number>; score?: number };
+      // A stored score beside the raw data, so assembly can order by it. The
+      // candidates are keyed by `sha256(...).slice(0,20)`, so any order a table
+      // can produce on its own is a hash order — effectively random, and it was
+      // what decided which protected evidence survived the budget.
+      const score = typeof value.score === 'number' ? value.score : Math.max(0, ...Object.values(value.scores ?? {}));
+      put.run(session, value.id, JSON.stringify({ ...value, score }));
+    }
   }
   nodes(session: string): LcmNodeRow[] { return this.db.prepare('SELECT id,depth,summary,status,host_summary_seq,host_end_seq FROM nodes WHERE session=? ORDER BY depth DESC,id DESC').all(session) as unknown as LcmNodeRow[]; }
-  /** Assemble bounded active context from summaries plus protected verbatim evidence. */
-  assemble(session: string, budgetChars = 12000, truncateHeadChars = 300, preparedNode?: number): LcmContextEntry[] {
+  /**
+   * Assemble bounded active context from summaries plus protected verbatim evidence.
+   *
+   * `protectedEvidence` is false when the caller has already emitted the ranked
+   * Jev hint block itself: the two order the same candidates differently, and
+   * emitting both would spend the budget twice and admit the evidence in table
+   * order beside the ranked copy.
+   */
+  assemble(session: string, budgetChars = 12000, truncateHeadChars = 300, preparedNode?: number, protectedEvidence = true): LcmContextEntry[] {
     let remaining = Math.max(0, budgetChars);
     const result: LcmContextEntry[] = [];
-    const hints = this.db.prepare('SELECT candidate,data FROM hints WHERE session=? ORDER BY candidate').all(session) as { candidate: string; data: string }[];
+    if (protectedEvidence) {
+      // By score descending, then by candidate for a deterministic tie. Without
+      // the score term, `ORDER BY candidate` admits evidence in sha256 order.
+      const hints = this.db.prepare("SELECT candidate,data FROM hints WHERE session=? ORDER BY json_extract(data,'$.score') DESC, candidate").all(session) as { candidate: string; data: string }[];
     for (const hint of hints) {
       const data = JSON.parse(hint.data) as { action?: string; text?: string; store_id?: number; call?: unknown };
       if (!['keep', 'truncate'].includes(String(data.action))) continue;
@@ -122,7 +140,7 @@ export class LcmStore {
         if (pointer.length <= remaining) { result.push({ kind: 'pointer', text: pointer, store_id: data.store_id, candidate: hint.candidate }); remaining -= pointer.length; }
       }
     }
-    // A compaction attempt assembles only its new region summary. Normal recall
+    }    // A compaction attempt assembles only its new region summary. Normal recall
     // excludes pending/aborted attempts and may traverse committed layers.
     const rows = (preparedNode === undefined
       ? this.db.prepare("SELECT id,summary FROM nodes WHERE session=? AND status='committed' ORDER BY depth DESC,id DESC").all(session)

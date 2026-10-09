@@ -1,6 +1,6 @@
 {
   "name": "@bojansandhaus/jev-lcm-dsh-compaction",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "description": "Jev ranking and SQLite lossless context management for DeepSeek Harness",
   "license": "MIT",

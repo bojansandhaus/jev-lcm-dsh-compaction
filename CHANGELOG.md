@@ -2,6 +2,75 @@
 
 This project addresses the Jev-only compaction failure modes described in [Hermes PR #116246](https://github.com/NousResearch/hermes-agent/pull/116246). The work below concerns calibrated scoring, protected evidence, text condensation, bounded requests, batching, and operational visibility.
 
+## [1.2.0] - 2026-10-09
+
+An adversarial review of the whole surface produced eleven findings, all of a
+shape: a mechanism meant to bound a decision was absent, unreachable, or
+measured in the wrong unit, and every one of them failed silently. Full notes:
+[RELEASE_NOTES_v1.2.0.md](RELEASE_NOTES_v1.2.0.md).
+
+### Fixed
+
+- **The T0-T4 ladder could shrink history past the evidence it was ranking.**
+  At tier >= 2 every message is whitespace-collapsed and cut to 200 then 60
+  characters, and the fold keeps only the second half of what survives, while a
+  candidate's own `text` ships verbatim. Candidates below the retained window
+  are no longer ranked: they stay `jev_unscored` and are counted in
+  `jev_folded_candidates`.
+- **One malformed answer discarded the entire batch.** `parseAnswers` threw on
+  the first id whose answer was out of range or missing, so one bad row among up
+  to 300 candidates threw away every score and `jev_fallbacks` incremented
+  regardless. It now returns `{scores, malformedIds}`; the well-formed half is
+  scored and retained, and the malformed count lands in
+  `jev_partial_fallback_count` and `jev_malformed_count`.
+- **The last provider in the chain had no cooldown.** The assignment only ran
+  after a successful handover, so a total exhaustion fell through to the throw
+  without reaching it, and the next turn re-attempted at full billed cost. The
+  final provider's cooldown is now written before the throw, and the
+  `1 + max_retries` attempts are spaced by exponential backoff.
+- **`hintBlock()` was dead code in the runtime path.** It is the only
+  `hint_budget_tokens` enforcement and the only score-descending ordering, and
+  the shipped path called `store.assemble()` at `hint_budget_tokens * 4`.
+  `summarize()` now builds its summary from it, and `assemble()` takes a
+  `protectedEvidence` flag so the node layer gets the remainder.
+- **Protected evidence was admitted in SHA-256 order.** `ORDER BY candidate`
+  over `sha256(...).slice(0,20)` keys is effectively random. Ordering is now by
+  the candidate's score descending.
+- **The `laya` breaker had no recovery path.** It cleared only on a successful
+  local answer, so a Laya that never came back re-raised every later turn and
+  never reached the hosted API. It now half-opens after its cooldown: one hosted
+  attempt per window, without incrementing the counter.
+- **`score()` dropped the caller's `AbortSignal`.** `Transport` had no signal
+  parameter and `post` built its own timeout, so the signal
+  `compactIfNeeded`/`compactNow`/`summarize` receive never reached the network.
+  It is threaded through `AbortSignal.any([...])`, and each session holds an
+  in-flight controller so dispose can abort it.
+- **`pendingNodes` was a single slot per session.** Only `summarize()` wrote it
+  but `compactRegion` read it unconditionally, so a host-driven flow reaching
+  `compactRegion` without a preceding `summarize()` consumed a stale node id and
+  stamped it with the current region's seqs. The node id is now passed to each
+  override explicitly.
+- **Clef chunking dropped the batch-size safeguard.** The Python sibling raises
+  `ClefError(...lower jev_max_candidates_per_batch)` past `CLEF_MAX_QUESTIONS`;
+  this port chunked quietly. It now logs the question and request counts once
+  per session.
+- **`jev: z.any()` accepted the whole settings blob**, so a typo'd key failed
+  later in `settings()` rather than at config load. Replaced with an inline
+  object schema over the scalar keys.
+
+### Changed
+
+- `tokens()` is renamed `bytes()` with the Python sibling's UTF-8 upper-bound
+  argument written down, and a new test pins the byte-to-token factor against a
+  tokenizer on a known sample instead of assuming it.
+- `assemble()` takes an optional `protectedEvidence` parameter; `summarize()`
+  passes `false` because the ranked hint block has already spent that budget.
+
+### Security
+
+- A caller's `AbortSignal` now reaches the transport, so an aborted compaction
+  no longer burns a full request timeout against the provider.
+
 ## [1.1.0] - 2026-10-09
 
 The reason-sentence pre-test guard silently discarded every `must` / `never` /

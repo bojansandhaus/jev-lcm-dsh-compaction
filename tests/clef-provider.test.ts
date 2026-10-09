@@ -255,9 +255,16 @@ test('the dry run probe reports Clef status without a credential value',async()=
 
 test('typed answer validation stays the single entry point for every provider',()=>{
   const questions={x:{type:'choice' as const,instructions:'k',criteria:{a:'a',b:'b'}}};
-  assert.throws(()=>parseAnswers({answers:{x:{choice:'c'}}},['x'],questions),/malformed/);
-  assert.deepEqual(parseAnswers({answers:{x:{noul:.5}}},['x'],{x:{type:'noul',instructions:'k'}}),{x:.5});
-  assert.throws(()=>parseAnswers({answers:{x:{noul:2}}},['x']),/malformed/);
-  assert.throws(()=>parseAnswers({answers:{x:{noul:true}}},['x']),/malformed/);
-  assert.deepEqual(parseAnswers({answers:{}},[]),{});
+  // A readable payload keeps its well-formed half and names the malformed ids
+  // beside it; an unreadable answer set names every id and scores none, and the
+  // chain above rejects it, which is what the two tests above exercise.
+  assert.deepEqual(parseAnswers({answers:{x:{choice:'c'}}},['x'],questions),{scores:{},malformedIds:['x']});
+  assert.deepEqual(parseAnswers({answers:{x:{noul:.5}}},['x'],{x:{type:'noul',instructions:'k'}}),{scores:{x:.5},malformedIds:[]});
+  assert.deepEqual(parseAnswers({answers:{x:{noul:2}}},['x']).malformedIds,['x']);
+  assert.deepEqual(parseAnswers({answers:{x:{noul:true}}},['x']).malformedIds,['x']);
+  assert.deepEqual(parseAnswers({answers:{}},[]).scores,{});
+  // A payload with no answers mapping at all is not a per-id result: nowhere
+  // in it is readable.
+  assert.throws(()=>parseAnswers(null,['x']),/malformed/);
+  assert.throws(()=>parseAnswers({},['x']),/malformed/);
 });

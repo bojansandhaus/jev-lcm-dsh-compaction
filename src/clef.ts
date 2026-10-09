@@ -98,8 +98,15 @@ export function sanitize_question_ids(questions:Questions):{sent:Questions;back:
  * Split one caller's questions into requests Clef will accept: legal ids, and
  * at most 64 per request. Each part carries its own way back to the caller's
  * ids, so the chunking is invisible above this module.
+ *
+ * `onChunked` is called once, and only when the batch really did exceed
+ * `CLEF_MAX_QUESTIONS`, with the request count and the question count. The
+ * Python sibling refuses such a batch outright with `ClefError(...lower
+ * jev_max_candidates_per_batch)`; this port chunks instead, which is the right
+ * behaviour for the shipped path, and this callback is the diagnostic that
+ * refusal used to carry. Without it the safeguard was silently dropped.
  */
-export function clef_chunk(questions:Questions):{questions:Questions;back:Record<string,string>}[] {
+export function clef_chunk(questions:Questions,onChunked?:(requests:number,questions:number)=>void):{questions:Questions;back:Record<string,string>}[] {
   const mapped=sanitize_question_ids(questions);
   const entries=Object.entries(mapped.sent);
   if(!entries.length)return [{questions:{},back:{}}];
@@ -108,6 +115,7 @@ export function clef_chunk(questions:Questions):{questions:Questions;back:Record
     const slice=entries.slice(i,i+CLEF_MAX_QUESTIONS);
     parts.push({questions:Object.fromEntries(slice),back:Object.fromEntries(slice.map(([sent])=>[sent,mapped.back[sent]]))});
   }
+  if(parts.length>1)onChunked?.(parts.length,entries.length);
   return parts;
 }
 
