@@ -1,7 +1,7 @@
 import { Settings, ProviderName, HostedProvider, endpoint } from './settings.js';
 import { Transport, Questions, Scores, post, parseAnswers, ProviderError } from './jev-client.js';
-import { LAYA_FALLBACK_FAILURE_LIMIT,layaFailureCount,noteLayaFailure,noteLayaSuccess } from './laya-breaker.js';
-import { CLEF_ACCOUNT_ENV, CLEF_TOKEN_ENV, clef_answers, clef_checkpoint, clef_chunk, clef_credentials_error, clefUrl } from './clef.js';
+import { LAYA_FALLBACK_FAILURE_LIMIT,layaFailureCount,layaHalfOpen,noteLayaFailure,noteLayaSuccess } from './laya-breaker.js';
+import { CLEF_ACCOUNT_ENV, CLEF_MAX_QUESTIONS, CLEF_TOKEN_ENV, clef_answers, clef_checkpoint, clef_chunk, clef_credentials_error, clefUrl } from './clef.js';
 export const ENV={typesafe:'TYPESAFE_API_KEY',openrouter:'OPENROUTER_API_KEY',laya:'LAYA_API_KEY',clef:CLEF_TOKEN_ENV};
 /**
  * The environment variables a provider needs, in the order a missing variable is
@@ -171,7 +171,11 @@ export async function probeProviders(config:Settings,env:Record<string,string|un
 export class ProviderChain {
   order:ProviderName[];private keys:Record<ProviderName,string>;accounts:Partial<Record<ProviderName,string>>={};providers:Record<ProviderName,JevProvider>;
   cooldowns:Partial<Record<ProviderName,number>>={};errors:Partial<Record<ProviderName,string>>={};last_provider='';fallback_count=0;calls=0;
-  constructor(readonly config:Settings,env:Record<string,string|undefined>=process.env,public transport:Transport=post,readonly clock=()=>performance.now()/1000,readonly log:(s:string)=>void=()=>{}){
+  /** The question ids the last `score()` call could not read an answer for. */
+  malformed_ids:string[]=[];
+  /** Whether the one-per-chain Clef chunking warning has already been logged. */
+  private chunkWarned=false;
+  constructor(readonly config:Settings,env:Record<string,string|undefined>=process.env,public transport:Transport=post,readonly clock=()=>performance.now()/1000,readonly log:(s:string)=>void=()=>{},readonly wait:(ms:number)=>Promise<void>=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms))){
     // Read each value once, through a helper, rather than inlining four
     // `env.X?.trim()??''` chains into one object literal. The compact form
     // miscompiles under the tsx/esbuild transform this test runner uses, and
@@ -245,10 +249,17 @@ export class ProviderChain {
    * One request for the generic providers: their configured body, through the
    * chain's transport, then the shared typed-answer validation.
    */
-  private async ask(p:JevProvider,name:ProviderName,state:unknown,questions:Questions):Promise<Scores>{
+  private async ask(p:JevProvider,name:ProviderName,state:unknown,questions:Questions,signal?:AbortSignal):Promise<Scores>{
     const body=p.payload?p.payload(state,questions):{model:p.model,state,questions};
-    const raw=await this.transport(p.url,this.keys[name],body,this.config.request_timeout_s);
-    return parseAnswers(p.normalize?p.normalize(raw):raw,Object.keys(questions),questions);
+    const raw=await this.transport(p.url,this.keys[name],body,this.config.request_timeout_s,signal);
+    const parsed=parseAnswers(p.normalize?p.normalize(raw):raw,Object.keys(questions),questions);
+    // Nothing readable at all is a malformed response, exactly as it was before
+    // per-id results: the caller has no score to rank on and must fall back.
+    // What is new is that a *partly* readable answer keeps its readable half
+    // instead of discarding every score beside the one bad row.
+    if(parsed.malformedIds.length&&!Object.keys(parsed.scores).length)throw new ProviderError('malformed');
+    if(parsed.malformedIds.length)this.malformed_ids.push(...parsed.malformedIds);
+    return parsed.scores;
   }
   /**
    * One score() for the Clef route, however many requests that needs.
@@ -266,20 +277,43 @@ export class ProviderChain {
    * this provider. A missing value fails here, naming the variable, before any
    * request is sent.
    */
-  private async clefScore(p:ClefProvider,state:unknown,questions:Questions):Promise<Scores>{
+  private async clefScore(p:ClefProvider,state:unknown,questions:Questions,signal?:AbortSignal):Promise<Scores>{
     const missing=clef_credentials_error({[CLEF_ACCOUNT_ENV]:this.accounts.clef??'',[CLEF_TOKEN_ENV]:this.keys.clef});
     if(missing)throw new ProviderError('malformed',missing);
     const url=clefUrl(this.accounts.clef!,p.model);
     const out:Scores={};
-    for(const part of clef_chunk(questions)){
-      const raw=await this.transport(url,this.keys.clef,p.body(state,part.questions),this.config.request_timeout_s);
+    for(const part of clef_chunk(questions,(requests,asked)=>{
+      // The Python sibling raises ClefError naming the limit for a batch over
+      // CLEF_MAX_QUESTIONS; this port chunks it. Logging the count once per
+      // chain keeps that diagnostic rather than dropping it silently.
+      if(this.chunkWarned)return;
+      this.chunkWarned=true;
+      this.log('clef_batch_chunked questions='+asked+' requests='+requests+' limit='+CLEF_MAX_QUESTIONS+'; lower jev_max_candidates_per_batch to ask for fewer requests');
+    })){
+      const raw=await this.transport(url,this.keys.clef,p.body(state,part.questions),this.config.request_timeout_s,signal);
       const parsed=parseAnswers(clef_answers(raw),Object.keys(part.questions),part.questions);
-      for(const [sent,score] of Object.entries(parsed)){const original=part.back[sent];if(original!==undefined)out[original]=score;}
+      // One unreadable part among several is a partial answer, kept like any
+      // other; a part where nothing was readable fails the request as before.
+      if(parsed.malformedIds.length&&!Object.keys(parsed.scores).length)throw new ProviderError('malformed');
+      if(parsed.malformedIds.length)this.malformed_ids.push(...parsed.malformedIds.map(sent=>part.back[sent]??sent));
+      for(const [sent,score] of Object.entries(parsed.scores)){const original=part.back[sent];if(original!==undefined)out[original]=score;}
     }
     return out;
   }
-  async score(state:unknown,questions:Questions):Promise<Scores>{
+  /**
+   * Exponential spacing between the `1 + max_retries` attempts at one provider.
+   * A provider that has just refused a connection is given progressively
+   * longer to come back rather than being asked again at once, which is the
+   * same bounded cost with a quarter of the immediate retries.
+   */
+  private async backoff(attempt:number){
+    const ms=Math.min(5000,250*Math.pow(2,Math.max(0,attempt-1)));
+    if(ms>0)await this.wait(ms);
+  }
+  async score(state:unknown,questions:Questions,signal?:AbortSignal):Promise<Scores>{
     if(!this.order.length)throw new ProviderError('disabled');
+    // Per call, not cumulative: a batch's malformed ids describe that batch.
+    this.malformed_ids=[];
     const available=this.order.filter(p=>(this.cooldowns[p]??0)<=this.clock());
     if(!available.length)throw new ProviderError('cooldown');
     let previous=this.order[0],last=new ProviderError('cooldown');
@@ -294,8 +328,9 @@ export class ProviderChain {
       if(index)this.log(`${previous}_provider_failed model=${this.providers[previous].model} reason=${last.reason}`);
       const attempts=index+1<available.length?1:1+this.config.jev_fallback_max_retries;
       for(let attempt=0;attempt<attempts;attempt+=1){
+        if(attempt)await this.backoff(attempt);
         this.calls+=1;const p=this.providers[name];
-        try{const result=name==='clef'?await this.clefScore(p as ClefProvider,state,questions):await this.ask(p,name,state,questions);this.last_provider=name;delete this.errors[name];if(name==='laya')await noteLayaSuccess();return result;}
+        try{const result=name==='clef'?await this.clefScore(p as ClefProvider,state,questions,signal):await this.ask(p,name,state,questions,signal);this.last_provider=name;delete this.errors[name];if(name==='laya')await noteLayaSuccess();return result;}
         catch(error){last=error instanceof ProviderError?error:new ProviderError('transport_error');}
         this.errors[name]=last.reason;if(!this.config.jev_fallback_on.includes(last.reason)){
           // A non-trigger failure ends the chain here and nothing follows it.
@@ -306,7 +341,12 @@ export class ProviderChain {
       // profile nor a collapsed chain spends breaker budget. A failure that is
       // not a configured trigger has already thrown above and never reached a
       // hosted URL, so it does not count either.
-      if(name==='laya'&&this.order.length>1&&!(await noteLayaFailure())){
+      //
+      // A tripped breaker still admits one hosted attempt per cooldown window:
+      // a half-open probe. Without it, a Laya server that never comes back
+      // re-raises forever and the hosted API that could still serve is never
+      // reached again for the life of the process.
+      if(name==='laya'&&this.order.length>1&&!(await noteLayaFailure(this.clock()*1000))&&!layaHalfOpen(this.clock()*1000)){
         this.log(`laya_fallback_suppressed count=${layaFailureCount()} limit=${LAYA_FALLBACK_FAILURE_LIMIT} reason=${last.reason}`);
         throw last;
       }
@@ -318,6 +358,12 @@ export class ProviderChain {
     // explain, and the thrown error already carries the same category to the
     // caller, so a standalone route stays silent.
     if(this.order.length>1)this.log(`${previous}_provider_failed model=${this.providers[previous].model} reason=${last.reason}`);
+    // The cooldown is recorded here as well as inside the loop. A total failure
+    // falls through to the throw without reaching the loop's line, so the last
+    // provider was never cooled down: the next turn re-attempted it at full
+    // billed cost, up to a whole request timeout of blocking, against an
+    // endpoint that had just refused every attempt.
+    this.cooldowns[available[available.length-1]!]=this.clock()+this.config.jev_fallback_cooldown_s;
     throw last;
   }
 }

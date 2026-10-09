@@ -25,7 +25,15 @@ export type Question=
   |{type:'score';instructions:string;criteria:string[]};
 export type Questions=Record<string,Question>;
 export type Scores=Record<string,number>;
-export type Transport=(url:string,key:string,payload:unknown,timeout:number)=>Promise<unknown>;
+/**
+ * One request to one provider.
+ *
+ * `signal` is optional and is the caller's own cancellation, so a compaction
+ * that the caller aborts reaches the socket instead of only being noticed after
+ * `timeout` seconds. The provider-server timeout is merged onto whatever signal
+ * arrives, so neither side can be cancelled by the other's settings.
+ */
+export type Transport=(url:string,key:string,payload:unknown,timeout:number,signal?:AbortSignal)=>Promise<unknown>;
 /** The probability a `noul` answer carries, and the only direct rule for it. */
 function probability(value:unknown):number|null{
   if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>1)return null;
@@ -90,20 +98,31 @@ function probabilityMap(value:unknown,size:number):number[]|null{
 function indexOfKey(map:Record<string,unknown>,key:string):number|null{
   const keys=Object.keys(map);const i=keys.indexOf(key);return i<0?null:i;
 }
-export function parseAnswers(data:unknown,names:string[],questions?:Questions):Scores {
+/** The answers a caller asked for, split into what was readable and what was not. */
+export interface ParsedAnswers {scores:Scores;malformedIds:string[];}
+/**
+ * Every answer the caller asked for, in the caller's own spelling.
+ *
+ * A payload with no answers mapping at all is a malformed response and throws:
+ * nothing about it is readable. Individual answers are per-id results instead,
+ * so one row that is out of range, missing, or off the 0..1 scale no longer
+ * discards every other score the provider returned with it. The malformed ids
+ * come back beside the scores, and the caller records and retains what it has.
+ */
+export function parseAnswers(data:unknown,names:string[],questions?:Questions):ParsedAnswers {
   if (!data || typeof data!=='object' || !('answers' in data) || !data.answers || typeof data.answers!=='object') throw new ProviderError('malformed');
   const answers=data.answers as Record<string,unknown>;
-  const out:Scores={};
-  for(const n of names){const score=typed_score(answers[n],questions?.[n]??NO_QUESTION);if(score===null)throw new ProviderError('malformed');out[n]=score;}
-  return out;
+  const out:Scores={};const malformedIds:string[]=[];
+  for(const n of names){const score=typed_score(answers[n],questions?.[n]??NO_QUESTION);if(score===null){malformedIds.push(n);continue;}out[n]=score;}
+  return {scores:out,malformedIds};
 }
-export const post:Transport=async(url,key,payload,timeout)=>{
+export const post:Transport=async(url,key,payload,timeout,signal)=>{
   try {
     // A keyless provider bound to loopback carries no credential, so the header
     // is omitted entirely rather than sent empty.
     const headers:Record<string,string>={'Content-Type':'application/json'};
     if(key)headers.Authorization='Bearer '+key;
-    const response=await fetch(url,{method:'POST',redirect:'error',headers,body:JSON.stringify(payload),signal:AbortSignal.timeout(timeout*1000)});
+    const response=await fetch(url,{method:'POST',redirect:'error',headers,body:JSON.stringify(payload),signal:AbortSignal.any([AbortSignal.timeout(timeout*1000),...signal?[signal]:[]])});
     if(!response.ok)throw new ProviderError([401,403,429].includes(response.status)?String(response.status):response.status>=500?'5xx':'http_error');
     const text=await response.text();if(text.length>2000000)throw new ProviderError('malformed');
     try{return JSON.parse(text);}catch{throw new ProviderError('malformed');}

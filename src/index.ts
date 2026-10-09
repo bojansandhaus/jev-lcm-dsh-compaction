@@ -5,7 +5,38 @@ import { probeProviders } from './providers.js';
 import type { Prepass } from './prepass.js';
 export { JevLCMCompactionEngine } from './compressor.js';export { JevThresholdCalibrator } from './calibration.js';
 export const name='jev-lcm-compaction';export const inject=['llm','tokenMeter','sessions','tools'];
-export const Config=z.object({databasePath:z.string().default('jev-lcm.sqlite'),thresholdRatio:z.number().default(.8),retainRatio:z.number().default(.16),maxTokens:z.number().default(8192),auto:z.boolean().default(true),jev:z.any()});
+/**
+ * The plugin's own configuration surface.
+ *
+ * `jev` is typed inline rather than `z.any()`. `any` accepts the whole settings
+ * blob, so a value of the wrong type — a string budget, a boolean mode, a
+ * string where the anchor patterns belong — surfaced from inside `settings()`
+ * on a later turn rather than from the configuration that carried it. Deep
+ * validation still belongs to `settings()` and still happens there: it is the
+ * single place the mode aliases, the endpoint shapes and the budget ranges
+ * live, and it resolves every default. This schema only pins each key's shape,
+ * so a mistake is reported at load, where it was written.
+ *
+ * The two array-valued keys (`jev_anchor_patterns`, `jev_fallback_order`) stay
+ * `any()`: this schema library fills an unset `z.array(...)` key with `[]`,
+ * which would wipe the shipped non-empty defaults in `settings()`. They keep
+ * their validation there instead.
+ */
+const JEV_CONFIG=z.object({
+  jev_provider:z.string(),api_provider:z.string(),
+  typesafe_base_url:z.string(),openrouter_base_url:z.string(),openrouter_endpoint_path:z.string(),
+  jev_endpoint_path:z.string(),jev_model:z.string(),openrouter_model:z.string(),
+  laya_base_url:z.string(),laya_endpoint_path:z.string(),local_model:z.string(),laya_model:z.string(),clef_model:z.string(),
+  jev_fallback_enabled:z.boolean(),jev_fallback_cooldown_s:z.number(),jev_fallback_max_retries:z.number(),
+  request_timeout_s:z.number(),keep_threshold:z.number(),keep_threshold_max:z.number(),min_keep_rate:z.number(),
+  jev_calibration_enabled:z.boolean(),jev_calibration_window:z.number(),jev_calibration_min_samples:z.number(),
+  conservative:z.boolean(),jev_anchor_protection_enabled:z.boolean(),jev_batch_window_turns:z.number(),
+  jev_max_candidates_per_batch:z.number(),jev_urgent_context_ratio:z.number(),max_state_tokens:z.number(),
+  max_request_tokens:z.number(),truncate_head_chars:z.number(),min_result_chars:z.number(),
+  hint_budget_tokens:z.number(),lcm_rollup_fan_in:z.number(),
+  jev_fallback_order:z.any(),jev_fallback_on:z.any(),jev_anchor_patterns:z.any(),
+});
+export const Config=z.object({databasePath:z.string().default('jev-lcm.sqlite'),thresholdRatio:z.number().default(.8),retainRatio:z.number().default(.16),maxTokens:z.number().default(8192),auto:z.boolean().default(true),jev:JEV_CONFIG});
 export function apply(ctx:Context,config:EngineConfig){
   const engine=new JevLCMCompactionEngine(ctx,config);
   const calibrate=async(p:Prepass,dryRun:boolean)=>{
